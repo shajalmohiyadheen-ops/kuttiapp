@@ -35,10 +35,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Web build
-        run: npm run build -w @kuttiapp/web
+        run: npm run build -w @expresscash/web
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci
-      - run: npm run lint -w @kuttiapp/web
-      - name: Mobile typecheck
-        run: npm run typecheck -w @kuttiapp/mobile
+      - run: npm run lint -w @expresscash/web

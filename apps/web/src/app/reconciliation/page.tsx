@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fromDb, parseAmount, toDecimalString, type StatementCheck, type WalletBalance } from "@kuttiapp/shared";
+import { fromDb, parseAmount, toDecimalString, type StatementCheck, type WalletBalance } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { RequireRole } from "@/components/shell";

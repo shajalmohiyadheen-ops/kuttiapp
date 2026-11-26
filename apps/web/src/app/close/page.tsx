@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { monthLabel, type ClosedMonth, type Expense, type MonthOverview, type Topup, type WalletBalance } from "@kuttiapp/shared";
+import { monthLabel, type ClosedMonth, type Expense, type MonthOverview, type Topup, type WalletBalance } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { downloadZip } from "@/lib/export";
@@ -45,7 +45,7 @@ async function exportMonth(month: string, lookups: ReturnType<typeof useApp>["lo
       .filter((t) => t.attachment_path)
       .map((t) => ({ bucket: "attachments" as const, path: t.attachment_path!, name: `transfers/${t.transfer_date}_${t.external_id}.${t.attachment_path!.split(".").pop()}` })),
   ];
-  const count = await downloadZip(`kuttiapp-${tag}`, files, [{ name: `kuttiapp-${tag}.xlsx`, data: xlsx }], (d, n) => onProgress(`Downloading files ${d} of ${n}…`));
+  const count = await downloadZip(`express-cash-${tag}`, files, [{ name: `express-cash-${tag}.xlsx`, data: xlsx }], (d, n) => onProgress(`Downloading files ${d} of ${n}…`));
   must(await sb.rpc("record_month_export", { p_month: month, p_file_count: count }));
 }
 

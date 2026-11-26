@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parseAmount, toDecimalString, sum, monthOf, monthLabel, type Topup, type TopupMethod } from "@kuttiapp/shared";
+import { parseAmount, toDecimalString, sum, monthOf, monthLabel, type Topup, type TopupMethod } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must, signedUrl } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/export";

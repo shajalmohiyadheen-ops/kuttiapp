@@ -1,6 +1,6 @@
 "use client";
 
-import type { Project } from "@kuttiapp/shared";
+import type { Project } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { RequireRole } from "@/components/shell";
 import { CrudPage } from "@/components/crud";

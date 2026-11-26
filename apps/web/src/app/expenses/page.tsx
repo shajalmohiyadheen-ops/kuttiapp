@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { sum, toDecimalString, type Expense, type WalletBalance, type Topup } from "@kuttiapp/shared";
+import { sum, toDecimalString, type Expense, type WalletBalance, type Topup } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { downloadXlsx, downloadZip } from "@/lib/export";
@@ -57,7 +57,7 @@ function Expenses() {
         sb.from("wallet_balances").select("*").order("name"),
         month ? sb.from("topups").select("*").eq("period_month", month).order("transfer_date") : sb.from("topups").select("*").order("transfer_date"),
       ]);
-      await downloadXlsx(`kuttiapp-expenses-${month || "all"}`, standardSheets({
+      await downloadXlsx(`express-cash-expenses-${month || "all"}`, standardSheets({
         title: month ? `Month ${month.slice(0, 7)} (filtered view)` : "All open months (filtered view)",
         expenses: rows as unknown as Array<Record<string, unknown>>,
         topups: must(topups) as Topup[] as unknown as Array<Record<string, unknown>>,
@@ -71,7 +71,7 @@ function Expenses() {
   async function exportBills() {
     const files = rows.filter((e) => e.invoice_path).map((e) => ({ bucket: "invoices" as const, path: e.invoice_path!, name: invoiceFileName(e) }));
     if (!files.length) return action.setError("No bills in this list");
-    await action.run(() => downloadZip(`kuttiapp-bills-${month || "all"}`, files, [], (d, n) => setProgress(`${d}/${n}`)));
+    await action.run(() => downloadZip(`express-cash-bills-${month || "all"}`, files, [], (d, n) => setProgress(`${d}/${n}`)));
     setProgress("");
   }
 

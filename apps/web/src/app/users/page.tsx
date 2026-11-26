@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Profile, UserRole } from "@kuttiapp/shared";
+import type { Profile, UserRole } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { RequireRole } from "@/components/shell";

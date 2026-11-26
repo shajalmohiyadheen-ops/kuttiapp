@@ -1,12 +1,11 @@
 {
-  "name": "kuttiapp",
+  "name": "express-cash",
   "private": true,
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "test": "npm run test -w @kuttiapp/shared",
+    "test": "npm run test -w @expresscash/shared",
     "test:db": "./scripts/test-db.sh",
-    "dev:web": "npm run dev -w @kuttiapp/web",
-    "dev:mobile": "npm run start -w @kuttiapp/mobile",
+    "dev:web": "npm run dev -w @expresscash/web",
     "seed": "node scripts/seed.mjs"
   }
 }

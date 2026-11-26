@@ -1,13 +1,14 @@
 :root {
-  /* From the Express Cash train logo: deep navy body, electric blue and cyan, a warm orange rail glow */
-  --bg: #04183f;
-  --bg-grad: radial-gradient(900px 600px at 100% 0%, rgb(30 144 255 / 22%) 0%, transparent 60%), radial-gradient(800px 600px at 0% 100%, rgb(79 216 255 / 12%) 0%, transparent 55%), linear-gradient(160deg, #020c22 0%, #04183f 55%, #062a66 100%);
-  --panel: rgb(8 30 72 / 78%);
-  --panel-solid: #0a2150;
-  --text: #eef6ff;
-  --muted: #9fb8de;
-  --border: rgb(94 200 255 / 20%);
-  --sky: #28d4ff;
+  /* From the Express Cash XC mark: near-black navy, neon cyan glow, white and cyan type, a tiny orange train light */
+  --bg: #020814;
+  --bg-grad: radial-gradient(900px 600px at 100% 0%, rgb(0 170 255 / 14%) 0%, transparent 60%), radial-gradient(800px 600px at 0% 100%, rgb(0 200 255 / 8%) 0%, transparent 55%), linear-gradient(160deg, #01040b 0%, #020814 55%, #03122b 100%);
+  --panel: rgb(4 16 36 / 82%);
+  --panel-solid: #051328;
+  --text: #f2f9ff;
+  --muted: #8ea9c9;
+  --border: rgb(0 200 255 / 28%);
+  --neon: 0 0 0 1px rgb(0 200 255 / 18%), 0 0 18px rgb(0 190 255 / 10%);
+  --sky: #19d3ff;
   --azure: #1e90ff;
   --royal: #1550d6;
   --ember: #ff9a2e;
@@ -16,8 +17,8 @@
   --brand-ink: #ffffff;
   --arc: #28d4ff;
   --arc-opacity: 0.75;
-  --glow: rgb(40 212 255 / 32%);
-  --ember-glow: rgb(255 154 46 / 45%);
+  --glow: rgb(0 200 255 / 38%);
+  --ember-glow: rgb(255 154 46 / 40%);
   --money-in: #2ee59d;
   --money-out: #ff4d4d;
   --danger: #ff4d4d;
@@ -35,7 +36,8 @@
   --panel-solid: #ffffff;
   --text: #071a3d;
   --muted: #4f6790;
-  --border: #d5e3f7;
+  --border: #cfe2f6;
+  --neon: 0 0 0 1px rgb(0 140 220 / 8%);
   --sky: #12aee0;
   --azure: #0f74e0;
   --royal: #0d3fb0;
@@ -56,10 +58,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; }
 body { background: var(--bg-grad); background-attachment: fixed; min-height: 100vh; }
-/* Glowing cyan ring arcs in two corners, as on the logo */
+/* Neon cyan arcs in two corners, like the glow on the logo */
 body::before, body::after { content: ""; position: fixed; pointer-events: none; border-radius: 50%; border: 2px solid transparent; opacity: var(--arc-opacity); z-index: 0; }
 body::before { width: 700px; height: 700px; top: -520px; left: -260px; border-bottom-color: var(--arc); filter: drop-shadow(0 0 10px var(--arc)); transform: rotate(-18deg); }
-body::after { width: 760px; height: 760px; bottom: -580px; right: -300px; border-top-color: var(--ember); filter: drop-shadow(0 0 10px var(--ember)); transform: rotate(-18deg); }
+body::after { width: 760px; height: 760px; bottom: -580px; right: -300px; border-top-color: var(--arc); filter: drop-shadow(0 0 10px var(--arc)); transform: rotate(-18deg); }
 .layout, .login { position: relative; z-index: 1; }
 @media (max-width: 800px) { body { background-attachment: scroll; } .panel, .tile, .table-wrap, .nav { backdrop-filter: none; } }
 a { color: var(--brand); text-decoration: none; }
@@ -207,11 +209,14 @@ button.big { font-size: 18px; padding: 14px; }
 .phone .banner { padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--warn) 16%, transparent); font-size: 15px; }
 .phone label.field { font-size: 14px; }
 
-/* Express Cash wordmark: live text in the logo's style (white + cyan, italic, swoosh underneath) */
-.wordmark { display: inline-flex; flex-direction: column; gap: 3px; }
-.wordmark span { font-style: italic; font-weight: 900; font-size: 22px; letter-spacing: -0.03em; line-height: 1; color: var(--text); white-space: nowrap; }
+/* Express Cash header: the XC mark beside the name */
+.wordmark { display: inline-flex; align-items: center; gap: 10px; }
+.wordmark img { width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--sky) 75%, transparent), 0 0 14px var(--glow); }
+.wordmark span { font-style: italic; font-weight: 900; font-size: 21px; letter-spacing: -0.03em; line-height: 1; color: var(--text); white-space: nowrap; }
 .wordmark span b { color: var(--sky); font-weight: 900; }
-.wordmark i { display: block; height: 3px; width: 82%; margin-left: 12%; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--sky) 35%, var(--azure)); box-shadow: 0 0 8px var(--glow); }
-.train-hero { display: block; width: 100%; height: auto; margin: -6px auto 14px; filter: drop-shadow(0 8px 24px var(--glow)); }
-/* Warm rail glow under the wallet card, as under the train */
-.tile.hero, .phone .card.hero { box-shadow: var(--shadow), inset 0 -3px 0 var(--ember), 0 10px 26px -12px var(--ember-glow); }
+.xc-hero { display: block; width: 150px; height: 150px; margin: 4px auto 22px; border-radius: 34px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--sky) 80%, transparent), 0 0 34px var(--glow); }
+/* Neon edge on cards, as on the logo frame */
+.panel, .tile, .table-wrap, .phone .card { box-shadow: var(--shadow), var(--neon); }
+/* Tiny warm accent from the train's headlight, under the wallet card only */
+.tile.hero, .phone .card.hero { box-shadow: var(--shadow), var(--neon), inset 0 -2px 0 var(--ember); }
+.hint-pending { display: inline-block; margin-top: 6px; font-size: 13px; color: var(--warn); }

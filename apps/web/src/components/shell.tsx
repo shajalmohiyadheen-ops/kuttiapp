@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/app-context";
 import { supabase } from "@/lib/supabase";
-import type { MessageKey, UserRole } from "@kuttiapp/shared";
+import type { MessageKey, UserRole } from "@expresscash/shared";
 import { ErrorText, Field, ThemeToggle, Wordmark } from "./ui";
 
 const NAV: Array<{ href: string; key: MessageKey; roles: UserRole[] }> = [
@@ -96,7 +96,7 @@ function Login() {
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="train-hero" src="/train.webp" alt="Express Cash" />
+      <img className="xc-hero" src="/xc.png" alt="Express Cash" />
       <div style={{ display: "grid", gap: 14 }}>
         <Field label={t("email")}>
           <input type="email" inputMode="email" autoCapitalize="none" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />

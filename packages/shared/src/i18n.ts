@@ -1,7 +1,7 @@
 // Interface text (English). Kept in one place so wording stays consistent.
 
 const en = {
-  appName: 'KuttiApp',
+  appName: 'Express Cash',
   signIn: 'Sign in',
   signOut: 'Sign out',
   email: 'Email',

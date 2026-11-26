@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parseAmount, toDecimalString, vatFromInclusive, invoicePath, formatSar, monthLabel, monthOf, type Expense, type PaymentMethod } from "@kuttiapp/shared";
+import { parseAmount, toDecimalString, vatFromInclusive, invoicePath, formatSar, monthLabel, monthOf, type Expense, type PaymentMethod } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must, signedUrl } from "@/lib/supabase";
 import { ErrorText, Field, Modal, Money, MonthSelect, PaidBy, StatusBadge, fmtDateTime, today, useAction, useLoad } from "./ui";

@@ -104,6 +104,19 @@ select pg_temp.expect_error($$insert into expenses (client_id, wallet_id, projec
 
 select pg_temp.eq((select available_balance from wallet_balances), 3370.00::numeric(14,2), 'every saved expense counts straight away: 5000 - 1150 - 80 - 400');
 select pg_temp.eq((select spent_card from wallet_balances), 1150.00::numeric(14,2), 'card spend split out');
+-- spending more than the balance is allowed (the admin may record the transfer later); the balance goes negative.
+-- Runs inside an exception block so the extra expense is rolled back afterwards.
+do $$
+begin
+  insert into expenses (wallet_id, project_id, category_id, paid_by, amount, description) values
+    ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000003', 'cash', 5000, 'paid before the transfer arrived');
+  if (select available_balance from wallet_balances) <> -1630.00 then
+    raise exception 'expected a negative balance of -1630.00, got %', (select available_balance from wallet_balances);
+  end if;
+  raise exception 'negative-ok';
+exception when others then
+  if sqlerrm <> 'negative-ok' then raise; end if;
+end $$;
 select pg_temp.eq((select spent_cash from wallet_balances), 480.00::numeric(14,2), 'cash spend split out');
 select pg_temp.eq((select period_month from expenses where id = '50000000-0000-0000-0000-000000000002'), (select this_month from ids), 'period month defaults from the expense date');
 
@@ -196,7 +209,7 @@ select pg_temp.eq(cardinality((select files_pending from mark_files_removed((sel
   array['attachments/00000000-0000-0000-0000-00000000000a/2026/t.pdf']))), 0, 'files marked removed');
 select pg_temp.expect_error($$insert into topups (wallet_id, amount, period_month) values ('10000000-0000-0000-0000-000000000001', 5, (select last_month from ids))$$, 'is closed');
 select pg_temp.expect_error($$select close_month((select last_month from ids), (select last_month_text from ids))$$, 'already closed');
-select pg_temp.eq(coalesce(nullif(current_setting('kutti.closing', true), ''), 'off'), 'off', 'delete switch is off again');
+select pg_temp.eq(coalesce(nullif(current_setting('xc.closing', true), ''), 'off'), 'off', 'delete switch is off again');
 reset role;
 select pg_temp.expect_error($$delete from expenses where id = '50000000-0000-0000-0000-000000000001'$$, 'cannot be deleted');
 set role authenticated;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Expense, Topup, WalletBalance } from "@kuttiapp/shared";
+import type { Expense, Topup, WalletBalance } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { listDrafts, syncDrafts, type Draft } from "@/lib/drafts";
@@ -16,7 +16,7 @@ interface HomeData {
   at: string;
 }
 
-const CACHE = "kutti.home.v1";
+const CACHE = "xc.home.v1";
 
 export default function PhoneHome() {
   const { t, profile, name } = useApp();
@@ -87,6 +87,8 @@ export default function PhoneHome() {
     ...(data?.topups ?? []).filter((x) => x.status === "posted").map((x) => ({ kind: "in" as const, id: x.id, at: x.created_at, x })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
+  const shown = w ? (Math.round(Number(w.available_balance) * 100) / 100 - queued).toFixed(2) : "0";
+
   return (
     <div className="phone">
       <header>
@@ -112,8 +114,11 @@ export default function PhoneHome() {
       ) : (
         <div className="card hero">
           <div className="muted">{w ? `${w.name}${w.card_last4 ? ` · 💳 •••• ${w.card_last4}` : ""}` : "…"}</div>
-          <div className="balance">{w ? <Money value={(Math.round(Number(w.available_balance) * 100) / 100 - queued).toFixed(2)} /> : "…"}</div>
+          <div className="balance">{w ? <Money value={shown} /> : "…"}</div>
           <div className="muted small">{t("availableBalance")} (card + cash in hand)</div>
+          {w && Number(shown) < 0 && (
+            <div className="hint-pending">⏳ Below zero: a transfer is probably still to be recorded. Keep adding expenses as normal.</div>
+          )}
           {w && (
             <div className="split">
               <div>

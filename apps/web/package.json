@@ -1,5 +1,5 @@
 {
-  "name": "@kuttiapp/web",
+  "name": "@expresscash/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kuttiapp/shared": "*",
+    "@expresscash/shared": "*",
     "@supabase/supabase-js": "^2.119.2",
     "exceljs": "^4.4.0",
     "jsqr": "^1.4.0",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fromDb, monthLabel, type DashboardSummary, type Expense, type SpendRow, type StorageUsage, type Topup, type WalletBalance } from "@kuttiapp/shared";
+import { fromDb, monthLabel, type DashboardSummary, type Expense, type SpendRow, type StorageUsage, type Topup, type WalletBalance } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/export";
@@ -55,7 +55,7 @@ function Dashboard() {
       if (walletId) (e = e.eq("wallet_id", walletId)), (tp = tp.eq("wallet_id", walletId));
       if (projectId) e = e.eq("project_id", projectId);
       const [ex, tx] = await Promise.all([e, tp]);
-      await downloadXlsx(`kuttiapp-${month ? month.slice(0, 7) : "all-open-months"}`, standardSheets({
+      await downloadXlsx(`express-cash-${month ? month.slice(0, 7) : "all-open-months"}`, standardSheets({
         title: month ? `Month ${monthLabel(month)}` : "All open months",
         expenses: must(ex) as Expense[] as unknown as Array<Record<string, unknown>>,
         topups: must(tx) as Topup[] as unknown as Array<Record<string, unknown>>,
@@ -139,7 +139,10 @@ function Dashboard() {
                 <td className="num"><Money value={b.topups_total} direction="in" /></td>
                 <td className="num"><Money value={b.spent_card} direction="out" /></td>
                 <td className="num"><Money value={b.spent_cash} direction="out" /></td>
-                <td className="num"><strong><Money value={b.available_balance} /></strong></td>
+                <td className="num">
+                  <strong><Money value={b.available_balance} /></strong>
+                  {Number(b.available_balance) < 0 && <div className="small warn-text">Transfer pending?</div>}
+                </td>
                 <td className="num">{b.unchecked_count || <span className="muted">0</span>}</td>
               </tr>
             ))}

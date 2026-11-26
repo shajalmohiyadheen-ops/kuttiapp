@@ -4,7 +4,7 @@
 // Kept in IndexedDB with the photo, sent as soon as the phone is back online.
 // client_id makes a resend safe: the server refuses a duplicate.
 
-import { invoicePath, type PaymentMethod } from "@kuttiapp/shared";
+import { invoicePath, type PaymentMethod } from "@expresscash/shared";
 import { supabase } from "./supabase";
 
 export interface Draft {
@@ -26,7 +26,7 @@ export interface Draft {
   last_error?: string;
 }
 
-const DB = "kuttiapp";
+const DB = "express-cash";
 const STORE = "drafts";
 
 function open(): Promise<IDBDatabase> {
@@ -135,7 +135,7 @@ export async function syncDrafts(userId: string): Promise<{ sent: number; failed
   return { sent, failed };
 }
 
-const RECENT = "kutti.recent.v2";
+const RECENT = "xc.recent.v2";
 export function recentChoices(): { projects: string[]; categories: string[]; paid_by: PaymentMethod | null } {
   try {
     return { projects: [], categories: [], paid_by: null, ...JSON.parse(localStorage.getItem(RECENT) || "{}") };

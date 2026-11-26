@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { t as translate, type MessageKey, type Profile, type Project, type Category, type Wallet } from "@kuttiapp/shared";
+import { t as translate, type MessageKey, type Profile, type Project, type Category, type Wallet } from "@expresscash/shared";
 import { supabase, must } from "./supabase";
 
 interface Lookups {
@@ -61,7 +61,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     setLookups(next);
     try {
-      localStorage.setItem("kutti.lookups", JSON.stringify(next)); // used by the phone app when offline
+      localStorage.setItem("xc.lookups", JSON.stringify(next)); // used by the phone app when offline
     } catch {}
   }, []);
 
@@ -72,9 +72,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      const cached = localStorage.getItem("kutti.lookups");
+      const cached = localStorage.getItem("xc.lookups");
       if (cached) setLookups(JSON.parse(cached));
-      const p = localStorage.getItem("kutti.profile");
+      const p = localStorage.getItem("xc.profile");
       if (p && JSON.parse(p).id === session.user.id) setProfile(JSON.parse(p));
     } catch {}
     supabase()
@@ -86,7 +86,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!data) return;
         setProfile(data as Profile);
         try {
-          localStorage.setItem("kutti.profile", JSON.stringify(data));
+          localStorage.setItem("xc.profile", JSON.stringify(data));
         } catch {}
       });
     reloadLookups().catch(console.error);

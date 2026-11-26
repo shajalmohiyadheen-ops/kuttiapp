@@ -2,7 +2,7 @@
 
 ## What already exists for it
 
-| KuttiApp | Odoo | Column already in the schema |
+| Express Cash | Odoo | Column already in the schema |
 | --- | --- | --- |
 | Wallet (card or cash float) | Bank or cash journal | `wallets.odoo_journal_id` |
 | Project | Analytic account | `projects.odoo_analytic_account_id` |
@@ -22,11 +22,11 @@ Database triggers only allow the `odoo_*` columns to change on approved, rejecte
    - attaches the invoice image (`ir.attachment`);
    - posts it and registers payment from the wallet's journal.
 3. On success it stores the Odoo id and sets `odoo_sync = 'synced'`. On failure it sets `failed`, and the web app gets a "Sync errors" list.
-4. A reversal in KuttiApp creates a credit note in Odoo (`ref = external_id + '-REV'`).
+4. A reversal in Express Cash creates a credit note in Odoo (`ref = external_id + '-REV'`).
 5. It's idempotent: before creating, the job searches Odoo for `ref = external_id`, so a retry never duplicates a bill.
 
 ## Decisions needed before building
 
 - Bill per expense, or one journal entry per day per wallet? Per-expense bills are easier to audit; journal entries keep Odoo smaller.
 - Which Odoo version, and is it reachable from the internet, or only over VPN?
-- Should Odoo's approval replace KuttiApp's, or follow it? This design assumes KuttiApp approves and Odoo only records.
+- Should Odoo's approval replace Express Cash's, or follow it? This design assumes Express Cash approves and Odoo only records.

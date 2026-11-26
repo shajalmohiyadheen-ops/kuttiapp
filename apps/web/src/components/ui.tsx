@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { formatSar, fromDb, monthLabel, openMonths, type ExpenseStatus, type TopupStatus } from "@kuttiapp/shared";
+import { formatSar, fromDb, monthLabel, openMonths, type ExpenseStatus, type TopupStatus } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { subscribeLive } from "@/lib/supabase";
 
@@ -27,7 +27,7 @@ export function ThemeToggle() {
     setTheme(v);
     document.documentElement.dataset.theme = v;
     try {
-      localStorage.setItem("kutti.theme", v);
+      localStorage.setItem("xc.theme", v);
     } catch {}
   };
   return (
@@ -151,14 +151,15 @@ export function fmtDateTime(s: string | null | undefined): string {
   return s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "—";
 }
 
-/** App name shown in headers, drawn as text so it stays sharp. */
+/** App name shown in headers: the XC mark beside the name as text. */
 export function Wordmark() {
   return (
-    <div className="wordmark" aria-label="Express Cash">
+    <div className="wordmark">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/xc-sm.png" alt="" />
       <span>
-        Express <b>Cash!</b>
+        Express <b>Cash</b>
       </span>
-      <i />
     </div>
   );
 }

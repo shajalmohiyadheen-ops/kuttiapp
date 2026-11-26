@@ -14,7 +14,7 @@ import {
   type PaymentMethod,
   type Project,
   type ZatcaInvoice,
-} from "@kuttiapp/shared";
+} from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { compressPhoto, readInvoiceQr } from "@/lib/photo";
 import { recentChoices, rememberChoices, saveAndSend, type Draft } from "@/lib/drafts";

@@ -1,6 +1,6 @@
 "use client";
 
-import { parseZatcaQr, type ZatcaInvoice } from "@kuttiapp/shared";
+import { parseZatcaQr, type ZatcaInvoice } from "@expresscash/shared";
 
 /** Shrinks a phone photo to at most 1600 px on the long side as JPEG (~200-400 KB), so storage lasts. */
 export async function compressPhoto(file: Blob, maxSide = 1600, quality = 0.8): Promise<Blob> {

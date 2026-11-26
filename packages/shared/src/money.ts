@@ -1,4 +1,4 @@
-// All money in KuttiApp is SAR with 2 decimals. We do arithmetic in halalas
+// All money in Express Cash is SAR with 2 decimals. We do arithmetic in halalas
 // (integer cents) so 0.1 + 0.2 style float errors never reach a total.
 
 export const CURRENCY = 'SAR';

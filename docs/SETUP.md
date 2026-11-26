@@ -19,7 +19,7 @@ The very first account created becomes the finance admin automatically. Create i
 SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed
 ```
 
-This creates four demo users (password `KuttiDemo#2026`), three wallets, projects, categories, top-ups, and expenses in every status. Demo rows can't be deleted afterwards, because the schema forbids deletes, so use a separate Supabase project for demos.
+This creates four demo users (password `ExpressDemo#2026`), three wallets, projects, categories, top-ups, and expenses in every status. Demo rows can't be deleted afterwards, because the schema forbids deletes, so use a separate Supabase project for demos.
 
 ## 2. Web app
 
@@ -34,14 +34,14 @@ npm run dev:web
 Deploy on Render (the repo includes `render.yaml`):
 
 1. Merge the code into `main` on GitHub. Render deploys from `main`.
-2. Render > **New** > **Blueprint**, connect GitHub, and pick the `kuttiapp` repo. Render reads `render.yaml`.
+2. Render > **New** > **Blueprint**, connect GitHub, and pick this repo (on GitHub it is still named `kuttiapp` until you rename it). Render reads `render.yaml`.
 3. Render asks for three values. Paste them from Supabase > Project Settings > API: `NEXT_PUBLIC_SUPABASE_URL` (Project URL), `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon / publishable key) and `SUPABASE_SERVICE_ROLE_KEY` (service_role / secret key).
-4. Click **Apply**. The first build takes a few minutes. Render then gives you an address like `https://kuttiapp-web.onrender.com`.
+4. Click **Apply**. The first build takes a few minutes. Render then gives you an address like `https://express-cash-web.onrender.com`.
 5. In Supabase > Authentication > URL Configuration, set **Site URL** to that address.
 
 `render.yaml` uses the Free plan. It sleeps after 15 minutes without visitors and takes about a minute to wake up. For an always-on app, change the plan to Starter (USD 7 a month at the time of writing) in Render. The `NEXT_PUBLIC_*` values are built into the pages, so after changing them use **Manual Deploy** > **Clear build cache & deploy**.
 
-Any Node 22 host works the same way: `npm ci && npm run build -w @kuttiapp/web && npm run start -w @kuttiapp/web`.
+Any Node 22 host works the same way: `npm ci && npm run build -w @expresscash/web && npm run start -w @expresscash/web`.
 
 ## 3. Mobile app
 
@@ -64,11 +64,11 @@ npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value YOUR-
 
 - **Android APK** (install directly, no Play Store): `npx eas-cli@latest build -p android --profile preview`. EAS gives you a download link; send it to custodians.
 - **iPhone via TestFlight**: `npx eas-cli@latest build -p ios --profile production`, then `npx eas-cli@latest submit -p ios`. Testers install it from TestFlight. This needs the Apple Developer account.
-- Change `ios.bundleIdentifier` and `android.package` in `apps/mobile/app.json` (currently `com.kuttiapp.pettycash`) to your company's domain **before** the first store build. They can't be changed after publishing.
+- Change `ios.bundleIdentifier` and `android.package` in `apps/mobile/app.json` (currently `com.expresscash.app`) to your company's domain **before** the first store build. They can't be changed after publishing.
 
 ## Your logo
 
-The logo assets are generated from `design/kuttiapp-logo-original.png` by `design/make-logo-assets.py` (needs Pillow). To use a new logo, replace that image, adjust the crop box in the script if needed, and run `python3 design/make-logo-assets.py`. It writes:
+The logo assets are generated from `design/express-cash-xc-icon.png` by `design/make-logo-assets.py` (needs Pillow). To use a new logo, replace that image, adjust the crop box in the script if needed, and run `python3 design/make-logo-assets.py`. It writes:
 
 - `apps/web/public/logo.png` and `apps/mobile/assets/logo.png`: the transparent wordmark used in headers and on the login page.
 - `apps/web/public/icon.png`: browser tab icon.

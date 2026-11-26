@@ -16,7 +16,7 @@ if (!url || !anon || !service) {
   console.error("Set SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
-const PASSWORD = process.env.SEED_PASSWORD ?? "KuttiDemo#2026";
+const PASSWORD = process.env.SEED_PASSWORD ?? "ExpressDemo#2026";
 const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 
 function ok(res, what) {
@@ -63,10 +63,10 @@ async function main() {
   }
 
   console.log("Users…");
-  const financeId = await ensureUser("finance@kuttiapp.test", "Finance Admin", "admin");
-  const pmId = await ensureUser("pm@kuttiapp.test", "Omar (Project Manager)", "approver");
-  const ahmedId = await ensureUser("ahmed@kuttiapp.test", "Ahmed (Site Engineer)", "custodian");
-  const saraId = await ensureUser("sara@kuttiapp.test", "Sara (Office)", "custodian");
+  const financeId = await ensureUser("finance@expresscash.test", "Finance Admin", "admin");
+  const pmId = await ensureUser("pm@expresscash.test", "Omar (Project Manager)", "approver");
+  const ahmedId = await ensureUser("ahmed@expresscash.test", "Ahmed (Site Engineer)", "custodian");
+  const saraId = await ensureUser("sara@expresscash.test", "Sara (Office)", "custodian");
 
   console.log("Master data…");
   const projects = ok(
@@ -130,10 +130,10 @@ async function main() {
   );
 
   console.log("Expenses…");
-  const ahmed = await asUser("ahmed@kuttiapp.test");
-  const sara = await asUser("sara@kuttiapp.test");
-  const pm = await asUser("pm@kuttiapp.test");
-  const finance = await asUser("finance@kuttiapp.test");
+  const ahmed = await asUser("ahmed@expresscash.test");
+  const sara = await asUser("sara@expresscash.test");
+  const pm = await asUser("pm@expresscash.test");
+  const finance = await asUser("finance@expresscash.test");
 
   const mk = async (client, userId, e) => {
     const invoice_path = e.amount > 100 ? await uploadInvoice(userId, crypto.randomUUID()) : null;
@@ -168,10 +168,10 @@ async function main() {
   ok(await finance.rpc("record_statement_check", { p_wallet_id: ahmedCard, p_statement_date: daysAgo(0), p_statement_balance: 6145, p_notes: "Matches Alinma app" }), "check");
 
   console.log(`\nDone. Sign in with any of these (password ${PASSWORD}):`);
-  console.log("  finance@kuttiapp.test  Finance admin (web)");
-  console.log("  pm@kuttiapp.test       Approver for P-001 and P-002 (web)");
-  console.log("  ahmed@kuttiapp.test    Custodian with a card and a cash float (mobile)");
-  console.log("  sara@kuttiapp.test     Custodian with a card (mobile)");
+  console.log("  finance@expresscash.test  Finance admin (web)");
+  console.log("  pm@expresscash.test       Approver for P-001 and P-002 (web)");
+  console.log("  ahmed@expresscash.test    Custodian with a card and a cash float (mobile)");
+  console.log("  sara@expresscash.test     Custodian with a card (mobile)");
 }
 
 main().catch((e) => {

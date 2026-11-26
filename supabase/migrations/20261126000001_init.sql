@@ -1,4 +1,4 @@
--- KuttiApp: petty cash and company card spending record
+-- Express Cash: petty cash and company card spending record
 -- Runs on Supabase Postgres (uses auth.users, auth.uid(), storage).
 --
 -- What it is
@@ -296,7 +296,7 @@ language plpgsql security definer set search_path = public
 as $$
 begin
   -- rows erased by close_month() are not logged one by one; the closed_months row is the record
-  if tg_op = 'DELETE' and current_setting('kutti.closing', true) = 'on' then return old; end if;
+  if tg_op = 'DELETE' and current_setting('xc.closing', true) = 'on' then return old; end if;
   insert into public.audit_log (table_name, record_id, action, actor_id, old_data, new_data)
   values (
     tg_table_name,
@@ -337,11 +337,11 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- Integrity guards (apply to everyone, including admins and the service role)
 -- ---------------------------------------------------------------------------
--- The only way to delete is close_month(), which sets kutti.closing for its own transaction.
+-- The only way to delete is close_month(), which sets xc.closing for its own transaction.
 create or replace function public.forbid_delete()
 returns trigger language plpgsql as $$
 begin
-  if current_setting('kutti.closing', true) = 'on' then return old; end if;
+  if current_setting('xc.closing', true) = 'on' then return old; end if;
   raise exception '% rows cannot be deleted; reverse them instead (whole months are erased with Close month)', tg_table_name using errcode = 'P0001';
 end $$;
 
@@ -801,7 +801,7 @@ begin
     v_carried, v_files, auth.uid()
   ) returning * into r;
 
-  perform set_config('kutti.closing', 'on', true);
+  perform set_config('xc.closing', 'on', true);
   delete from public.expenses where id = any (v_expense_ids);
   delete from public.topups where id = any (v_topup_ids);
   -- the per-row history would otherwise keep the erased data; the closed_months row
@@ -809,7 +809,7 @@ begin
   delete from public.audit_log where table_name = 'expenses' and record_id = any (select unnest(v_expense_ids)::text);
   delete from public.audit_log where table_name = 'topups' and record_id = any (select unnest(v_topup_ids)::text);
   delete from public.month_exports where month = v_month;
-  perform set_config('kutti.closing', 'off', true);
+  perform set_config('xc.closing', 'off', true);
   return r;
 end $$;
 
