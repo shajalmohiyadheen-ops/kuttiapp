@@ -13,7 +13,7 @@ export function Money({ value, direction }: { value: number | string | null | un
   return (
     <span className={cls}>
       {sign}
-      {formatSar(value)}
+      {formatSar(direction ? Math.abs(n) : n, { halalas: true })}
     </span>
   );
 }

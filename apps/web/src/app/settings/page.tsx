@@ -17,6 +17,8 @@ export default function SettingsPage() {
 const ITEMS = [
   { key: "invoice_required_above", label: "Bill photo required for expenses above (SAR)", help: "Set 0 to require a photo for every expense (except no-bill categories).", fallback: 100, min: 0, max: 1000000 },
   { key: "retention_months", label: "Months kept open (including this month)", help: "Staff can enter expenses for this many months. Older months must be closed (exported and erased).", fallback: 5, min: 1, max: 12 },
+  { key: "cash_hold_days", label: "Cash may be held for at most (days)", help: "Cash withdrawn and not spent or returned after this many days is flagged on the dashboard and on the staff phone.", fallback: 4, min: 1, max: 30 },
+  { key: "bank_match_days", label: "Bank statement: card payment matching window (days)", help: "A card expense matches a bank line of the same amount up to this many days apart.", fallback: 3, min: 0, max: 15 },
   { key: "storage_limit_mb", label: "Invoice storage on your Supabase plan (MB)", help: "The dashboard warns at 80%. Free plan: 1000 MB.", fallback: 1000, min: 100, max: 1000000 },
 ];
 

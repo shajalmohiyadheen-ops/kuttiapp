@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Expense, Topup, WalletBalance } from "@expresscash/shared";
+import { formatSar, type CashHeld, type CashMove, type Expense, type Topup, type WalletBalance } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { listDrafts, syncDrafts, type Draft } from "@/lib/drafts";
@@ -13,13 +13,17 @@ interface HomeData {
   wallet: WalletBalance | null;
   expenses: Expense[];
   topups: Topup[];
+  cash: CashMove[];
+  held: CashHeld | null;
   at: string;
 }
 
-const CACHE = "xc.home.v1";
+const CACHE = "xc.home.v2";
+
+const CASH_LABEL = { withdrawal: "🏧 Cash withdrawal", deposit: "↩ Cash put back on card", handover: "↩ Cash handed to office" } as const;
 
 export default function PhoneHome() {
-  const { t, profile, name } = useApp();
+  const { t, profile, name, setting } = useApp();
   const router = useRouter();
   const [data, setData] = useState<HomeData | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -32,16 +36,21 @@ export default function PhoneHome() {
     setDrafts(await listDrafts());
     try {
       const sb = supabase();
-      const [w, e, tp] = await Promise.all([
+      const [w, e, tp, cm, h] = await Promise.all([
         sb.from("wallet_balances").select("*").eq("custodian_id", profile.id).eq("active", true).maybeSingle(),
         sb.from("expenses").select("*").eq("submitted_by", profile.id).order("created_at", { ascending: false }).limit(30),
         sb.from("topups").select("*").order("transfer_date", { ascending: false }).limit(10),
+        sb.from("cash_moves").select("*").order("created_at", { ascending: false }).limit(15),
+        sb.rpc("cash_held"),
       ]);
       const wallet = (must(w) as WalletBalance | null) ?? null;
+      const mine = <T extends { wallet_id: string }>(xs: T[]) => (wallet ? xs.filter((x) => x.wallet_id === wallet.wallet_id) : []);
       const next: HomeData = {
         wallet,
         expenses: must(e) as Expense[],
-        topups: wallet ? (must(tp) as Topup[]).filter((x) => x.wallet_id === wallet.wallet_id) : [],
+        topups: mine(must(tp) as Topup[]),
+        cash: mine(must(cm) as CashMove[]),
+        held: mine((must(h) as CashHeld[]) ?? [])[0] ?? null,
         at: new Date().toISOString(),
       };
       setData(next);
@@ -81,13 +90,20 @@ export default function PhoneHome() {
   useLive(load);
 
   const w = data?.wallet;
-  const queued = drafts.reduce((a, d) => a + Math.round(Number(d.amount) * 100), 0) / 100;
+  // drafts not sent yet still come off the right pocket
+  const queued = (by: "card" | "cash") => drafts.filter((d) => d.paid_by === by).reduce((a, d) => a + Math.round(Number(d.amount) * 100), 0);
+  const cents = (v: unknown) => Math.round(Number(v ?? 0) * 100);
+  const onCard = w ? (cents(w.card_balance) - queued("card")) / 100 : 0;
+  const inHand = w ? (cents(w.cash_in_hand) - queued("cash")) / 100 : 0;
+  const shown = (Math.round(onCard * 100) + Math.round(inHand * 100)) / 100;
+  const tooLong = Number(data?.held?.held_too_long ?? 0);
+  const holdDays = setting("cash_hold_days", 4);
+
   const feed = [
     ...(data?.expenses ?? []).map((e) => ({ kind: "out" as const, id: e.id, at: e.created_at, e })),
     ...(data?.topups ?? []).filter((x) => x.status === "posted").map((x) => ({ kind: "in" as const, id: x.id, at: x.created_at, x })),
+    ...(data?.cash ?? []).map((c) => ({ kind: "cash" as const, id: c.id, at: c.created_at, c })),
   ].sort((a, b) => b.at.localeCompare(a.at));
-
-  const shown = w ? (Math.round(Number(w.available_balance) * 100) / 100 - queued).toFixed(2) : "0";
 
   return (
     <div className="phone">
@@ -113,32 +129,38 @@ export default function PhoneHome() {
         <div className="card">No wallet is assigned to you yet. Ask your admin.</div>
       ) : (
         <div className="card hero">
-          <div className="muted">{w ? `${w.name}${w.card_last4 ? ` · 💳 •••• ${w.card_last4}` : ""}` : "…"}</div>
-          <div className="balance">{w ? <Money value={shown} /> : "…"}</div>
-          <div className="muted small">{t("availableBalance")} (card + cash in hand)</div>
-          {w && Number(shown) < 0 && (
-            <div className="hint-pending">⏳ Below zero: a transfer is probably still to be recorded. Keep adding expenses as normal.</div>
-          )}
-          {w && (
-            <div className="split">
-              <div>
-                {t("moneyIn")}
-                <b className="money-in">+{Number(w.topups_total).toLocaleString("en", { minimumFractionDigits: 2 })}</b>
-              </div>
-              <div>
-                💳 {t("card")}
-                <b className="money-out">−{Number(w.spent_card).toLocaleString("en", { minimumFractionDigits: 2 })}</b>
-              </div>
-              <div>
-                💵 {t("cash")}
-                <b className="money-out">−{Number(w.spent_cash).toLocaleString("en", { minimumFractionDigits: 2 })}</b>
-              </div>
+          <div className="muted">{w ? `${w.name}${w.card_last4 ? ` · •••• ${w.card_last4}` : ""}` : "…"}</div>
+          <div className="pockets">
+            <div>
+              <span>💳 {t("onCard")}</span>
+              <b className={onCard < 0 ? "money-out" : undefined}>{w ? formatSar(onCard) : "…"}</b>
             </div>
+            <div>
+              <span>💵 {t("cashInHand")}</span>
+              <b className={tooLong > 0 ? "warn-text" : undefined}>{w ? formatSar(inHand) : "…"}</b>
+            </div>
+          </div>
+          <div className="pocket-total">
+            <span>{t("availableBalance")}</span>
+            <b className={shown < 0 ? "money-out" : undefined}>{w ? formatSar(shown) : "…"}</b>
+          </div>
+          {w && shown < 0 && (
+            <div className="hint-pending">⏳ Below zero: a transfer is probably still to be recorded. Keep adding expenses as normal.</div>
           )}
         </div>
       )}
 
+      {tooLong > 0 && (
+        <div className="banner warn">
+          ⚠ You have held <b>{formatSar(tooLong)}</b> cash for more than {holdDays} days ({data?.held?.oldest_days} days). Spend it on the project or return it today.
+        </div>
+      )}
+
       <button className="bigbtn" disabled={data !== null && !w} onClick={() => router.push("/app/add")}>📷 {t("addExpense")}</button>
+      <div className="twin">
+        <button className="btn" disabled={data !== null && !w} onClick={() => router.push("/app/cash?kind=withdrawal")}>🏧 {t("cashWithdrawal")}</button>
+        <button className="btn" disabled={!w || inHand <= 0} onClick={() => router.push("/app/cash?kind=return")}>↩ {t("returnCash")}</button>
+      </div>
 
       {drafts.length > 0 && (
         <div className="card" style={{ display: "grid", gap: 8 }}>
@@ -162,7 +184,15 @@ export default function PhoneHome() {
       <div className="list">
         {feed.length === 0 && <div className="muted">{t("noData")}</div>}
         {feed.map((f) =>
-          f.kind === "in" ? (
+          f.kind === "cash" ? (
+            <div key={f.id} className="item" style={f.c.status === "reversed" ? { opacity: 0.5, textDecoration: "line-through" } : undefined}>
+              <div>
+                {CASH_LABEL[f.c.kind]}
+                <div className="sub">{f.c.move_date}{f.c.notes ? ` · ${f.c.notes}` : ""}</div>
+              </div>
+              <Money value={f.c.amount} direction={f.c.kind === "handover" ? "out" : undefined} />
+            </div>
+          ) : f.kind === "in" ? (
             <div key={f.id} className="item">
               <div>
                 ⬇ {t("transfer")}

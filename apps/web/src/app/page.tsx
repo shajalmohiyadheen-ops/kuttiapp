@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fromDb, monthLabel, type Expense, type StorageUsage, type Topup, type WalletBalance, type WalletMonthSummary } from "@expresscash/shared";
+import { fromDb, monthLabel, type AttentionFlag, type Expense, type StorageUsage, type Topup, type WalletBalance, type WalletMonthSummary } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/export";
@@ -29,12 +29,16 @@ function Dashboard() {
   const action = useAction();
 
   const summary = useLoad(async () => must(await supabase().rpc("wallet_month_summary", { p_month: month || null })) as WalletMonthSummary[], [month]);
+  const flags = useLoad(async () => must(await supabase().rpc("attention_flags")) as AttentionFlag[], []);
   const storage = useLoad(async () => must(await supabase().rpc("storage_usage")) as StorageUsage | null, []);
-  useLive(summary.reload);
+  useLive(() => (summary.reload(), flags.reload()));
 
   const rows = (summary.data ?? []).filter((r) => !walletId || r.wallet_id === walletId);
   const total = (k: keyof WalletMonthSummary) => (rows.reduce((a, r) => a + fromDb(r[k] as string), 0) / 100).toFixed(2);
   const ready = summary.data !== undefined;
+  const hasReturned = rows.some((r) => fromDb(r.returned) !== 0);
+  const shownFlags = (flags.data ?? []).filter((f) => !walletId || f.wallet_id === walletId);
+  const flagsFor = (id: string) => shownFlags.filter((f) => f.wallet_id === id && f.kind !== "negative");
   const openingLabel = month ? `Start of ${monthLabel(month)}` : "Brought forward";
   const balanceLabel = month && month !== monthStart() ? `Balance end of ${monthLabel(month)}` : "Balance now";
 
@@ -44,14 +48,16 @@ function Dashboard() {
       let e = sb.from("expenses").select("*").order("expense_date");
       let tp = sb.from("topups").select("*").order("transfer_date");
       let b = sb.from("wallet_balances").select("*").order("name");
-      if (month) (e = e.eq("period_month", month)), (tp = tp.eq("period_month", month));
-      if (walletId) (e = e.eq("wallet_id", walletId)), (tp = tp.eq("wallet_id", walletId)), (b = b.eq("wallet_id", walletId));
-      const [ex, tx, bx] = await Promise.all([e, tp, b]);
+      let c = sb.from("cash_moves").select("*").order("move_date");
+      if (month) (e = e.eq("period_month", month)), (tp = tp.eq("period_month", month)), (c = c.eq("period_month", month));
+      if (walletId) (e = e.eq("wallet_id", walletId)), (tp = tp.eq("wallet_id", walletId)), (b = b.eq("wallet_id", walletId)), (c = c.eq("wallet_id", walletId));
+      const [ex, tx, bx, cx] = await Promise.all([e, tp, b, c]);
       await downloadXlsx(`express-cash-${month ? month.slice(0, 7) : "all-open-months"}`, standardSheets({
         title: month ? `Month ${monthLabel(month)}` : "All open months",
         expenses: must(ex) as Expense[] as unknown as Array<Record<string, unknown>>,
         topups: must(tx) as Topup[] as unknown as Array<Record<string, unknown>>,
         balances: must(bx) as WalletBalance[] as unknown as Array<Record<string, unknown>>,
+        cashMoves: must(cx) as Array<Record<string, unknown>>,
         ...lookups,
         invoiceName: (r) => invoiceFileName(r as unknown as Expense),
       }));
@@ -87,6 +93,17 @@ function Dashboard() {
         </div>
       )}
 
+      {shownFlags.length > 0 && (
+        <>
+          <h2>Needs attention <span className="section-count">{shownFlags.length}</span></h2>
+          <ul className="flag-list">
+            {shownFlags.map((f, i) => (
+              <li key={i} className={f.kind}>{FLAG_ICON[f.kind]} {f.message}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <div className="tiles four">
         <Tile direction="in" label="Transferred to wallets" value={ready ? total("transferred") : undefined} />
         <Tile direction="out" label="Spent" value={ready ? total("spent") : undefined} />
@@ -96,7 +113,9 @@ function Dashboard() {
       {ready && (
         <p className="tally">
           {openingLabel} <Money value={total("opening")} /> <span className="op">+</span> transferred <Money value={total("transferred")} direction="in" />{" "}
-          <span className="op">−</span> spent <Money value={total("spent")} /> <span className="op">=</span> <strong><Money value={total("balance")} /></strong>
+          <span className="op">−</span> spent <Money value={total("spent")} />{" "}
+          {hasReturned && <><span className="op">−</span> returned <Money value={total("returned")} />{" "}</>}
+          <span className="op">=</span> <strong><Money value={total("balance")} /></strong>
         </p>
       )}
 
@@ -110,13 +129,16 @@ function Dashboard() {
               <th className="num">Transferred</th>
               <th className="num">Spent</th>
               <th className="num">VAT</th>
+              {hasReturned && <th className="num">Returned</th>}
               <th className="num">{balanceLabel}</th>
+              <th className="num">{t("cashInHand")}</th>
+              <th>Flags</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.wallet_id} className={r.active ? undefined : "muted"}>
-                <td>
+                <td style={{ minWidth: 150 }}>
                   {r.name} {r.card_last4 && <span className="muted small">•••• {r.card_last4}</span>}
                   <div className="small muted">{r.custodian_name}</div>
                 </td>
@@ -124,14 +146,21 @@ function Dashboard() {
                 <td className="num"><Money value={r.transferred} direction="in" /></td>
                 <td className="num"><Money value={r.spent} direction="out" /></td>
                 <td className="num"><Money value={r.vat} /></td>
+                {hasReturned && <td className="num"><Money value={r.returned} /></td>}
                 <td className="num">
                   <strong><Money value={r.balance} /></strong>
                   {fromDb(r.balance) < 0 && <div className="small warn-text">Transfer pending?</div>}
                 </td>
+                <td className="num"><Money value={r.cash_in_hand} /></td>
+                <td>
+                  {groupFlags(flagsFor(r.wallet_id)).map(([f, n]) => (
+                    <span key={f.kind} className={`chip${f.kind === "cash_held" ? "" : " red"}`}>{FLAG_SHORT[f.kind](f)}{n > 1 ? ` ×${n}` : ""}</span>
+                  ))}
+                </td>
               </tr>
             ))}
             {ready && rows.length === 0 && (
-              <tr><td colSpan={6} className="muted">No wallets yet. Add one under Wallets.</td></tr>
+              <tr><td colSpan={9} className="muted">No wallets yet. Add one under Wallets.</td></tr>
             )}
           </tbody>
           {rows.length > 1 && (
@@ -142,17 +171,38 @@ function Dashboard() {
                 <th className="num"><Money value={total("transferred")} direction="in" /></th>
                 <th className="num"><Money value={total("spent")} direction="out" /></th>
                 <th className="num"><Money value={total("vat")} /></th>
+                {hasReturned && <th className="num"><Money value={total("returned")} /></th>}
                 <th className="num"><Money value={total("balance")} /></th>
+                <th className="num"><Money value={total("cash_in_hand")} /></th>
+                <th />
               </tr>
             </tfoot>
           )}
         </table>
       </div>
       <p className="muted small">
-        Balance = {openingLabel} + transferred − spent. Spent includes card and cash. Updates live as staff save.
+        Balance = {openingLabel} + transferred − spent{hasReturned ? " − cash returned to the office" : ""}. Spent includes card and cash. Balance includes the cash in hand. Updates live as staff save.
       </p>
     </>
   );
+}
+
+const FLAG_ICON: Record<AttentionFlag["kind"], string> = { cash_held: "💵", late_entry: "⏰", bank_only: "🏦", negative: "⏳" };
+const FLAG_SHORT: Record<AttentionFlag["kind"], (f: AttentionFlag) => string> = {
+  cash_held: (f) => `Cash held ${f.days}d`,
+  late_entry: (f) => `Late entry ${f.days}d`,
+  bank_only: () => "Not in app",
+  negative: () => "Below zero",
+};
+
+/** One chip per kind of flag, worst first: [flag with the most days, count]. */
+function groupFlags(list: AttentionFlag[]): Array<[AttentionFlag, number]> {
+  const m = new Map<string, [AttentionFlag, number]>();
+  for (const f of list) {
+    const cur = m.get(f.kind);
+    m.set(f.kind, cur ? [(f.days ?? 0) > (cur[0].days ?? 0) ? f : cur[0], cur[1] + 1] : [f, 1]);
+  }
+  return [...m.values()];
 }
 
 function Tile({ label, value, direction, hero }: { label: string; value: string | undefined; direction?: "in" | "out"; hero?: boolean }) {

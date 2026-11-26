@@ -41,6 +41,7 @@ export function subscribeLive(onChange: () => void): () => void {
     .channel(`live-${Math.random().toString(36).slice(2)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, debounced)
     .on("postgres_changes", { event: "*", schema: "public", table: "topups" }, debounced)
+    .on("postgres_changes", { event: "*", schema: "public", table: "cash_moves" }, debounced)
     .subscribe();
   return () => {
     if (timer) clearTimeout(timer);

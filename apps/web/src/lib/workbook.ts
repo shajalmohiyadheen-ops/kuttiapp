@@ -45,6 +45,8 @@ export function standardSheets(input: {
   expenses: Array<Record<string, unknown>>;
   topups: Array<Record<string, unknown>>;
   balances: Array<Record<string, unknown>>;
+  /** Cash withdrawn from cards and given back. */
+  cashMoves?: Array<Record<string, unknown>>;
   profiles: Named[];
   projects: Named[];
   categories: Named[];
@@ -55,6 +57,9 @@ export function standardSheets(input: {
   const people = nm(input.profiles), projects = nm(input.projects), categories = nm(input.categories), wallets = nm(input.wallets);
   const live = input.expenses.filter((e) => e.status !== "reversed");
   const total = (rows: Array<Record<string, unknown>>, key = "amount") => rows.reduce((a, r) => a + Math.round(Number(r[key] ?? 0) * 100), 0) / 100;
+  const cash = (input.cashMoves ?? []).filter((c) => c.status === "posted");
+  const cashOf = (k: string) => cash.filter((c) => c.kind === k);
+  const CASH_KIND: Record<string, string> = { withdrawal: "Withdrawn from card", deposit: "Put back on card", handover: "Handed to office" };
   return [
     {
       name: "Summary",
@@ -72,6 +77,9 @@ export function standardSheets(input: {
         { k: "VAT", v: total(live, "vat_amount") },
         { k: "Not checked yet", v: total(live.filter((e) => !e.checked_by)), n: live.filter((e) => !e.checked_by).length },
         { k: "Reversed (not counted)", v: total(input.expenses.filter((e) => e.status === "reversed")), n: input.expenses.filter((e) => e.status === "reversed").length },
+        { k: "Cash withdrawn from cards", v: total(cashOf("withdrawal")), n: cashOf("withdrawal").length },
+        { k: "Cash put back on cards", v: total(cashOf("deposit")), n: cashOf("deposit").length },
+        { k: "Cash handed to office", v: total(cashOf("handover")), n: cashOf("handover").length },
       ],
     },
     {
@@ -84,7 +92,10 @@ export function standardSheets(input: {
         { header: "Transfers in", key: "topups_total", money: true },
         { header: "Spent card", key: "spent_card", money: true },
         { header: "Spent cash", key: "spent_cash", money: true },
+        { header: "Cash handed back", key: "handed_over", money: true },
         { header: "Balance now", key: "available_balance", money: true },
+        { header: "On card", key: "card_balance", money: true },
+        { header: "Cash in hand", key: "cash_in_hand", money: true },
       ],
       rows: input.balances,
     },
@@ -136,6 +147,28 @@ export function standardSheets(input: {
         { header: "Status", key: "status", width: 10 },
       ],
       rows: input.topups.map((t) => ({ ...t, month: String(t.period_month ?? "").slice(0, 7), wallet: wallets.get(t.wallet_id as string) })),
+    },
+    {
+      name: "Cash",
+      columns: [
+        { header: "Date", key: "move_date", width: 12 },
+        { header: "Entered", key: "entered", width: 12 },
+        { header: "Month", key: "month", width: 9 },
+        { header: "ID", key: "external_id", width: 16 },
+        { header: "Wallet", key: "wallet", width: 22 },
+        { header: "What", key: "what", width: 20 },
+        { header: "Notes", key: "notes", width: 28 },
+        { header: "Amount", key: "amount", money: true },
+        { header: "Status", key: "status", width: 10 },
+      ],
+      rows: (input.cashMoves ?? []).map((c) => ({
+        ...c,
+        entered: c.created_at ? new Date(String(c.created_at)).toLocaleDateString("en-CA", { timeZone: "Asia/Riyadh" }) : "",
+        month: String(c.period_month ?? "").slice(0, 7),
+        wallet: wallets.get(c.wallet_id as string),
+        what: CASH_KIND[String(c.kind)] ?? c.kind,
+        status: c.status === "reversed" ? `reversed: ${c.reversal_reason ?? ""}` : "saved",
+      })),
     },
   ];
 }

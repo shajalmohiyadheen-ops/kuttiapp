@@ -12,6 +12,8 @@ const NAV: Array<{ href: string; key: MessageKey; roles: UserRole[] }> = [
   { href: "/", key: "dashboard", roles: ["admin", "accounts"] },
   { href: "/expenses", key: "expenses", roles: ["admin", "accounts"] },
   { href: "/topups", key: "topups", roles: ["admin", "accounts"] },
+  { href: "/bank", key: "bankStatements", roles: ["admin", "accounts"] },
+  { href: "/cash", key: "cashMoves", roles: ["admin", "accounts"] },
   { href: "/close", key: "closeMonth", roles: ["admin", "accounts"] },
   { href: "/reconciliation", key: "reconciliation", roles: ["admin"] },
   { href: "/wallets", key: "wallets", roles: ["admin"] },

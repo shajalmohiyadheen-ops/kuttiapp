@@ -230,3 +230,24 @@ input, select, textarea { font-weight: 400; }
 .tally { margin: 12px 0 0; padding: 12px 16px; border-radius: 12px; background: var(--panel); border: 1px dashed var(--border); font-size: 16px; color: var(--muted); }
 .tally .op { font-weight: 700; color: var(--text); margin: 0 4px; }
 .tally strong { color: var(--text); }
+
+/* wallet: card and cash in hand side by side, total underneath */
+.phone .pockets { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+.phone .pockets > div { min-width: 0; background: color-mix(in srgb, var(--panel-solid) 55%, transparent); border-radius: 14px; padding: 10px 12px; }
+.phone .pockets span { display: block; font-size: 15px; font-weight: 500; color: var(--muted); }
+.phone .pockets b { display: block; font-size: clamp(18px, 5.4vw, 24px); font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+.phone .pocket-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.phone .pocket-total span { color: var(--muted); font-size: 16px; }
+.phone .pocket-total b { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.phone .banner.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); }
+.phone .twin .btn { font-size: 17px; padding: 15px 8px; font-weight: 600; }
+.flag-list { display: grid; gap: 6px; margin: 0 0 18px; padding: 0; list-style: none; }
+.flag-list li { padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--warn); }
+.flag-list li.bank_only, .flag-list li.late_entry { border-left-color: var(--money-out); }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); margin: 2px 4px 2px 0; white-space: nowrap; }
+.chip.red { background: color-mix(in srgb, var(--money-out) 22%, transparent); }
+.section-count { font-weight: 400; color: var(--muted); font-size: 0.8em; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 10px 0; }
+.bank-section { margin-bottom: 10px; }
+.bank-section summary { cursor: pointer; padding: 6px 0; }
+.bank-section summary h2 { font-size: 20px; }

@@ -23,14 +23,14 @@ export default function WalletsPage() {
         fields={[
           { key: "name", label: t("name"), required: true, placeholder: "e.g. Irfan's wallet" },
           { key: "custodian_id", label: "Holder", type: "select", required: true, options: people },
-          { key: "bank_name", label: t("bank") },
+          { key: "bank_name", label: t("bank"), type: "select", required: true, options: ["Alinma", "SNB", "Other"].map((b) => ({ value: b, label: b })) },
           { key: "card_last4", label: t("cardLast4"), placeholder: "1234" },
           { key: "active", label: t("active"), type: "checkbox" },
         ]}
         columns={[
           { label: t("name"), render: (w) => w.name },
           { label: "Holder", render: (w) => name("profiles", w.custodian_id) },
-          { label: t("card"), render: (w) => (w.card_last4 ? `•••• ${w.card_last4}` : "—") },
+          { label: t("card"), render: (w) => `${w.bank_name ?? ""}${w.card_last4 ? ` •••• ${w.card_last4}` : ""}` || "—" },
           { label: "Brought forward", num: true, render: (w) => <Money value={w.opening_balance} /> },
           { label: "ID", render: (w) => <span className="small muted">{w.external_id}</span> },
         ]}

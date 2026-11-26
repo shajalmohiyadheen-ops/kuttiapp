@@ -21,10 +21,11 @@ export default function ClosePage() {
 /** Builds the month's Excel + every bill and transfer proof into one zip, downloads it, and records the export. */
 async function exportMonth(month: string, lookups: ReturnType<typeof useApp>["lookups"], onProgress: (s: string) => void): Promise<void> {
   const sb = supabase();
-  const [ex, tx, bal] = await Promise.all([
+  const [ex, tx, bal, cm] = await Promise.all([
     sb.from("expenses").select("*").eq("period_month", month).order("expense_date"),
     sb.from("topups").select("*").eq("period_month", month).order("transfer_date"),
     sb.from("wallet_balances").select("*").order("name"),
+    sb.from("cash_moves").select("*").eq("period_month", month).order("move_date"),
   ]);
   const expenses = must(ex) as Expense[];
   const topups = must(tx) as Topup[];
@@ -35,6 +36,7 @@ async function exportMonth(month: string, lookups: ReturnType<typeof useApp>["lo
       expenses: expenses as unknown as Array<Record<string, unknown>>,
       topups: topups as unknown as Array<Record<string, unknown>>,
       balances: must(bal) as WalletBalance[] as unknown as Array<Record<string, unknown>>,
+      cashMoves: must(cm) as Array<Record<string, unknown>>,
       ...lookups,
       invoiceName: (e) => `bills/${invoiceFileName(e as unknown as Expense)}`,
     }),

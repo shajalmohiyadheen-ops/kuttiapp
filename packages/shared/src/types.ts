@@ -40,7 +40,10 @@ export interface WalletMonthSummary {
   transferred: string;
   spent: string;
   vat: string;
+  /** Cash handed back to the office this month (lowers the balance). */
+  returned: string;
   balance: string;
+  cash_in_hand: string;
 }
 
 export interface WalletBalance {
@@ -57,7 +60,68 @@ export interface WalletBalance {
   spent_card: Num;
   spent_cash: Num;
   unchecked_count: number;
+  opening_cash: Num;
+  withdrawn: Num;
+  deposited: Num;
+  handed_over: Num;
+  /** card + cash in hand */
   available_balance: Num;
+  card_balance: Num;
+  cash_in_hand: Num;
+}
+
+/** withdrawal: card to hand; deposit: hand back to card; handover: hand to the office. */
+export type CashMoveKind = 'withdrawal' | 'deposit' | 'handover';
+
+export interface CashMove {
+  id: string;
+  external_id: string;
+  client_id: string | null;
+  wallet_id: string;
+  kind: CashMoveKind;
+  amount: Num;
+  move_date: string;
+  period_month: string;
+  notes: string | null;
+  status: TopupStatus;
+  created_by: string;
+  created_at: string;
+  checked_by: string | null;
+  checked_at: string | null;
+  reversal_reason: string | null;
+}
+
+export interface CashHeld {
+  wallet_id: string;
+  cash_in_hand: Num;
+  held_too_long: Num;
+  oldest_days: number | null;
+}
+
+export type BankSection = 'matched' | 'late' | 'bank_only' | 'app_only' | 'fee';
+
+export interface BankReportRow {
+  section: BankSection;
+  entry_date: string;
+  amount: Num; // signed: negative = out of the card
+  description: string | null;
+  line_id: string | null;
+  ref_type: 'expense' | 'cash_move' | 'topup' | null;
+  ref_id: string | null;
+  entered_on: string | null;
+  days_late: number | null;
+  resolved: boolean;
+  note: string | null;
+}
+
+export interface AttentionFlag {
+  wallet_id: string;
+  wallet_name: string;
+  custodian_name: string | null;
+  kind: 'cash_held' | 'late_entry' | 'bank_only' | 'negative';
+  message: string;
+  amount: Num;
+  days: number | null;
 }
 
 export interface Project {

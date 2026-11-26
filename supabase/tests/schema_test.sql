@@ -190,14 +190,67 @@ select pg_temp.eq((select opening from wallet_month_summary((select this_month f
   'opening = everything before the month');
 
 -- reconciliation
-select pg_temp.eq((record_statement_check('10000000-0000-0000-0000-000000000001', current_date, 3280)).difference, -20.00::numeric(14,2),
-  'statement check flags a 20 SAR gap');
+-- the bank shows the card only: 5000 in - 1100 card spend = 3900 (the 400 cash spend is not on the card)
+select pg_temp.eq((record_statement_check('10000000-0000-0000-0000-000000000001', current_date, 3880)).difference, -20.00::numeric(14,2),
+  'statement check compares the card part and flags a 20 SAR gap');
+
+-- ---------------------------------------------------------------- cash in hand
+-- admin sends 2000 to Staff Two's card
+insert into topups (id, wallet_id, amount) values ('40000000-0000-0000-0000-000000000020', '10000000-0000-0000-0000-000000000002', 2000);
+select pg_temp.as_user((select c2 from ids));
+insert into cash_moves (id, wallet_id, kind, amount, move_date) values
+  ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 'withdrawal', 800, current_date - 6),   -- logged today, withdrawn 6 days ago
+  ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 'withdrawal', 1000, current_date);
+insert into expenses (wallet_id, project_id, category_id, paid_by, amount, description) values
+  ('10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000003', 'cash', 300, 'site labour');
+insert into expenses (wallet_id, project_id, category_id, paid_by, amount, vendor, expense_date) values
+  ('10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'card', 70, 'Hardware shop', current_date - 5);
+insert into cash_moves (wallet_id, kind, amount) values ('10000000-0000-0000-0000-000000000002', 'deposit', 200), ('10000000-0000-0000-0000-000000000002', 'handover', 100);
+select pg_temp.eq((select cash_in_hand from wallet_balances), 1200.00::numeric(14,2), 'cash in hand: 800 + 1000 - 300 spent - 200 deposited - 100 handed back');
+select pg_temp.eq((select card_balance from wallet_balances), 330.00::numeric(14,2), 'card: 2000 - 1800 withdrawn + 200 deposited - 70 swiped');
+select pg_temp.eq((select available_balance from wallet_balances), 1530.00::numeric(14,2), 'total = card + cash; only the handover leaves the wallet');
+select pg_temp.eq((select held_too_long from cash_held()), 200.00::numeric(14,2), 'oldest cash first: 200 left of the 6-day-old withdrawal is held too long');
+select pg_temp.eq((select oldest_days from cash_held()), 6, 'oldest cash is 6 days old');
+select pg_temp.expect_error($$insert into cash_moves (wallet_id, kind, amount) values ('10000000-0000-0000-0000-000000000001', 'withdrawal', 10)$$, 'row-level security');
+select pg_temp.expect_error($$insert into cash_moves (wallet_id, kind, amount, move_date) values ('10000000-0000-0000-0000-000000000002', 'withdrawal', 10, current_date + 2)$$, 'future');
+select pg_temp.expect_error($$select import_bank_lines('10000000-0000-0000-0000-000000000002', 'x', '[{"date":"2026-01-01","amount":-1,"description":"x"}]')$$, 'only accounts');
+select pg_temp.eq((select count(*) from bank_lines), 0::bigint, 'staff cannot see statements');
+select pg_temp.as_user((select admin from ids));
+select pg_temp.expect_error($$update cash_moves set amount = 1 where id = '60000000-0000-0000-0000-000000000001'$$, 'cannot be edited');
+
+-- ---------------------------------------------------------------- bank statement
+select pg_temp.as_user((select acc from ids));
+create temp table stmt as select jsonb_build_array(
+  jsonb_build_object('date', current_date - 6, 'amount', -800, 'description', 'Cash withdrawal - Local ATM'),
+  jsonb_build_object('date', current_date, 'amount', -1000, 'description', 'سحب نقدي صراف آلي'),
+  jsonb_build_object('date', current_date, 'amount', 2000, 'description', 'Incoming Local transfer'),
+  jsonb_build_object('date', current_date - 1, 'amount', -55.50, 'description', 'POS Purchase COFFEE HOUSE'),
+  jsonb_build_object('date', current_date, 'amount', -5.75, 'description', 'VAT Charge'),
+  jsonb_build_object('date', current_date, 'amount', 200, 'description', 'Cash deposit ATM')) as lines;
+grant select on stmt to authenticated;
+select pg_temp.eq((import_bank_lines('10000000-0000-0000-0000-000000000002', 'week.xlsx', (select lines from stmt)) ->> 'matched')::int, 4, 'two withdrawals, the transfer in and the deposit match');
+select pg_temp.eq((import_bank_lines('10000000-0000-0000-0000-000000000002', 'week-again.xlsx', (select lines from stmt)) ->> 'new_lines')::int, 0, 'uploading the same lines again adds nothing');
+select pg_temp.eq((select count(*) from bank_report('10000000-0000-0000-0000-000000000002') where section = 'late'), 1::bigint, 'withdrawal entered 6 days after the bank date is late');
+select pg_temp.eq((select days_late from bank_report('10000000-0000-0000-0000-000000000002') where section = 'late'), 6, 'late by 6 days');
+select pg_temp.eq((select count(*) from bank_report('10000000-0000-0000-0000-000000000002') where section = 'matched'), 3::bigint, 'three matched on time');
+select pg_temp.eq((select amount from bank_report('10000000-0000-0000-0000-000000000002') where section = 'bank_only'), -55.50::numeric(14,2), 'card swipe in the bank but not in the app');
+select pg_temp.eq((select amount from bank_report('10000000-0000-0000-0000-000000000002') where section = 'app_only'), -70.00::numeric(14,2), 'card expense in the app but not in the bank');
+select pg_temp.eq((select count(*) from bank_report('10000000-0000-0000-0000-000000000002') where section = 'fee'), 1::bigint, 'bank fee kept apart');
+select pg_temp.eq((select string_agg(kind, ',' order by kind) from attention_flags()), 'bank_only,cash_held,late_entry', 'dashboard flags');
+select resolve_bank_line((select line_id from bank_report('10000000-0000-0000-0000-000000000002') where section = 'bank_only'), true, 'personal coffee, staff repaid');
+select pg_temp.eq((select count(*) from attention_flags() where kind = 'bank_only'), 0::bigint, 'a resolved line is no longer flagged');
+select pg_temp.eq((select count(*) from wallet_month_summary() where opening + transferred - spent - returned <> balance), 0::bigint,
+  'wallet summary still adds up with cash handed back');
+select pg_temp.eq((select cash_in_hand from wallet_month_summary() where wallet_id = '10000000-0000-0000-0000-000000000002'), 1200.00::numeric(14,2), 'summary shows cash in hand');
+select pg_temp.as_user((select admin from ids));
 
 -- ---------------------------------------------------------------- close month
 insert into topups (id, wallet_id, amount, period_month, attachment_path) values
   ('40000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000001', 300, (select last_month from ids), '00000000-0000-0000-0000-00000000000a/2026/t.pdf');
 create temp table bal_before as select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001';
 grant select on bal_before to authenticated;
+create temp table cash_before as select cash_in_hand, card_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000002';
+grant select on cash_before to authenticated;
 
 select pg_temp.expect_error($$select close_month((select last_month from ids), 'yes')$$, 'type .* to confirm');
 select pg_temp.expect_error($$select close_month((select this_month from ids), to_char(current_date, 'YYYY-MM'))$$, 'current month cannot be closed');
@@ -213,6 +266,8 @@ select record_month_export((select last_month from ids), 1);
 select pg_temp.eq((select files_pending from close_month((select last_month from ids), (select last_month_text from ids))),
   array['attachments/00000000-0000-0000-0000-00000000000a/2026/t.pdf'], 'close returns the files to remove');
 select pg_temp.eq((select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'), (select available_balance from bal_before), 'balance unchanged by close');
+select pg_temp.eq((select (cash_in_hand, card_balance)::text from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000002'),
+  (select (cash_in_hand, card_balance)::text from cash_before), 'cash in hand and card unchanged by close (cash carried forward)');
 select pg_temp.eq((select opening_balance from wallets where id = '10000000-0000-0000-0000-000000000001'), 100.00::numeric(14,2), 'net of the month (300 in - 200 out) carried forward');
 select pg_temp.eq((select count(*) from expenses where period_month = (select last_month from ids)), 0::bigint, 'month expenses erased');
 select pg_temp.eq((select count(*) from topups where period_month = (select last_month from ids)), 0::bigint, 'month top-ups erased');
@@ -231,7 +286,8 @@ select pg_temp.eq((storage_usage() ->> 'limit_bytes')::bigint, 1048576000::bigin
 
 -- ---------------------------------------------------------------- staff privacy
 select pg_temp.as_user((select c2 from ids));
-select pg_temp.eq((select count(*) from expenses), 0::bigint, 'staff do not see other staff entries');
+select pg_temp.eq((select count(*) from expenses where wallet_id <> '10000000-0000-0000-0000-000000000002'), 0::bigint, 'staff do not see other staff entries');
+select pg_temp.eq((select count(*) from cash_moves where wallet_id <> '10000000-0000-0000-0000-000000000002'), 0::bigint, 'staff do not see other staff cash');
 select pg_temp.eq((select count(*) from audit_log), 0::bigint, 'staff cannot read the audit log');
 select pg_temp.eq(storage_usage(), null::jsonb, 'staff cannot see storage usage');
 select pg_temp.eq((select count(*) from month_overview()), 0::bigint, 'staff see no month overview');

@@ -10,8 +10,16 @@
 -- Money rules
 --   * Every amount is numeric(14,2) in SAR.
 --   * A wallet's balance is CALCULATED: opening balance + posted top-ups minus every
---     expense that isn't reversed. It is never read from the bank. Reconciliation
---     against the bank statement is a manual step (statement_checks).
+--     expense that isn't reversed, minus cash handed back to the office. It is never
+--     read from the bank.
+--   * The wallet is split into what is on the card and the cash in hand. Staff log a
+--     cash withdrawal (card -> cash) the same day; a deposit moves cash back to the
+--     card; a handover returns cash to the office. Cash held longer than the
+--     cash_hold_days setting (default 4, oldest cash first) is flagged.
+--   * Weekly, accounts upload the card's bank statement. Its lines are matched to card
+--     swipes, cash withdrawals, deposits and transfers; anything in the bank but not in
+--     the app (or the other way round), and withdrawals entered after the bank date,
+--     are flagged.
 --   * Day to day nothing is deleted. A wrong entry is reversed by finance, which
 --     keeps the row and records who and why. Staff can correct their own entry until
 --     accounts has checked it.
@@ -33,6 +41,7 @@ create extension if not exists pgcrypto;
 -- invoice and marks entries checked. custodian: staff holding a card or cash float.
 create type public.user_role as enum ('admin', 'accounts', 'custodian');
 create type public.payment_method as enum ('card', 'cash');   -- card swipe, or cash withdrawn from the card
+create type public.cash_move_kind as enum ('withdrawal', 'deposit', 'handover');  -- card->cash, cash->card, cash->office
 create type public.topup_status as enum ('posted', 'reversed');
 create type public.expense_status as enum ('recorded', 'reversed');
 create type public.sync_status as enum ('not_synced', 'queued', 'synced', 'failed');
@@ -107,10 +116,11 @@ create table public.wallets (
   -- One wallet per holder: the company card plus any cash withdrawn from it.
   name            text not null,
   custodian_id    uuid not null references public.profiles (id),
-  bank_name       text default 'Alinma',
+  bank_name       text not null default 'Alinma' check (bank_name in ('Alinma', 'SNB', 'Other')),  -- picks the statement layout
   card_last4      text check (card_last4 is null or card_last4 ~ '^[0-9]{4}$'),
   active          boolean not null default true,
   opening_balance numeric(14,2) not null default 0,  -- net of all closed (erased) months, set by close_month()
+  opening_cash    numeric(14,2) not null default 0,  -- the cash-in-hand part of opening_balance
   odoo_journal_id integer,             -- Phase 2: Odoo journal this wallet maps to
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
@@ -151,7 +161,11 @@ insert into public.settings (key, value) values
   ('invoice_required_above', '100'::jsonb),   -- SAR; bill photo mandatory above this (categories that need a bill)
   ('vat_rate', '0.15'::jsonb),
   ('retention_months', '5'::jsonb),           -- how many months (incl. the current one) accept entries
-  ('storage_limit_mb', '1000'::jsonb);        -- file storage on the Supabase plan; dashboard warns at 80%
+  ('storage_limit_mb', '1000'::jsonb),        -- file storage on the Supabase plan; dashboard warns at 80%
+  ('cash_hold_days', '4'::jsonb),             -- cash in hand older than this is flagged
+  ('bank_match_days', '3'::jsonb),            -- card swipes and transfers match bank lines within this many days
+  ('bank_match_days_cash', '10'::jsonb),      -- cash withdrawals match within this window (so late entries are still found)
+  ('bank_mapping', '{}'::jsonb);              -- the statement columns picked on the first upload
 
 create or replace function public.setting_numeric(p_key text, p_default numeric)
 returns numeric
@@ -231,6 +245,76 @@ create index on public.expenses (wallet_id, status);
 create index on public.expenses (project_id, expense_date);
 create index on public.expenses (submitted_by, created_at desc);
 create index on public.expenses (period_month, status);
+
+-- ---------------------------------------------------------------------------
+-- Cash moves inside a wallet: withdrawal (card -> cash), deposit (cash -> card),
+-- handover (cash returned to the office, leaves the wallet)
+-- ---------------------------------------------------------------------------
+create table public.cash_moves (
+  id              uuid primary key default gen_random_uuid(),
+  external_id     text not null unique default ('KC-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10))),
+  client_id       uuid unique,
+  wallet_id       uuid not null references public.wallets (id),
+  kind            public.cash_move_kind not null,
+  amount          numeric(14,2) not null check (amount > 0),
+  move_date       date not null default current_date,
+  period_month    date not null,
+  notes           text,
+  status          public.topup_status not null default 'posted',
+  created_by      uuid not null default auth.uid() references public.profiles (id),
+  created_at      timestamptz not null default now(),
+  checked_by      uuid references public.profiles (id),
+  checked_at      timestamptz,
+  check_note      text,
+  reversed_by     uuid references public.profiles (id),
+  reversed_at     timestamptz,
+  reversal_reason text,
+  odoo_sync       public.sync_status not null default 'not_synced',
+  odoo_move_id    integer,
+  constraint checked_complete check ((checked_at is null) = (checked_by is null)),
+  constraint reversal_complete check (
+    (status = 'reversed') = (reversed_at is not null and reversed_by is not null and coalesce(reversal_reason, '') <> '')
+  )
+);
+create index on public.cash_moves (wallet_id, move_date);
+create index on public.cash_moves (period_month);
+
+-- ---------------------------------------------------------------------------
+-- Bank statement uploads, matched line by line against the app's entries
+-- ---------------------------------------------------------------------------
+create table public.bank_imports (
+  id          uuid primary key default gen_random_uuid(),
+  wallet_id   uuid not null references public.wallets (id),
+  file_name   text not null,
+  date_from   date,
+  date_to     date,
+  line_count  integer not null,
+  new_lines   integer not null,
+  created_by  uuid not null default auth.uid() references public.profiles (id),
+  created_at  timestamptz not null default now()
+);
+
+create table public.bank_lines (
+  id            uuid primary key default gen_random_uuid(),
+  wallet_id     uuid not null references public.wallets (id),
+  import_id     uuid not null references public.bank_imports (id),
+  txn_date      date not null,
+  amount        numeric(14,2) not null check (amount <> 0),   -- negative: out of the card; positive: into it
+  description   text not null default '',
+  line_hash     text not null,                                -- the same line uploaded twice is stored once
+  kind          text not null check (kind in ('swipe', 'withdrawal', 'transfer_out', 'fee', 'deposit', 'transfer_in')),
+  matched_type  text check (matched_type in ('expense', 'cash_move', 'topup')),
+  matched_id    uuid,
+  days_late     integer,       -- matched cash withdrawal: days between the bank date and the day it was entered
+  resolved_by   uuid references public.profiles (id),
+  resolved_at   timestamptz,
+  note          text,
+  created_at    timestamptz not null default now(),
+  unique (wallet_id, line_hash),
+  constraint match_complete check ((matched_type is null) = (matched_id is null))
+);
+create unique index bank_lines_one_match on public.bank_lines (matched_type, matched_id) where matched_id is not null;
+create index on public.bank_lines (wallet_id, txn_date);
 
 -- ---------------------------------------------------------------------------
 -- Manual reconciliation against the bank statement
@@ -314,7 +398,7 @@ $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['profiles', 'wallets', 'projects', 'categories', 'settings', 'topups', 'expenses', 'statement_checks', 'closed_months']
+  foreach t in array array['profiles', 'wallets', 'projects', 'categories', 'settings', 'topups', 'expenses', 'cash_moves', 'bank_imports', 'statement_checks', 'closed_months']
   loop
     execute format('create trigger audit_%1$s after insert or update or delete on public.%1$I for each row execute function public.audit_trigger()', t);
   end loop;
@@ -350,6 +434,15 @@ create trigger no_delete_expenses before delete on public.expenses for each row 
 create trigger no_delete_checks   before delete on public.statement_checks for each row execute function public.forbid_delete();
 create trigger no_delete_closed   before delete on public.closed_months for each row execute function public.forbid_delete();
 create trigger no_delete_audit    before delete on public.audit_log for each row execute function public.forbid_delete();
+create trigger no_delete_cash     before delete on public.cash_moves for each row execute function public.forbid_delete();
+create trigger no_delete_bank     before delete on public.bank_lines for each row execute function public.forbid_delete();
+create trigger no_delete_imports  before delete on public.bank_imports for each row execute function public.forbid_delete();
+
+-- KSA calendar day (the database clock is UTC)
+create or replace function public.local_today()
+returns date language sql stable as $$ select (now() at time zone 'Asia/Riyadh')::date $$;
+create or replace function public.local_date(p_at timestamptz)
+returns date language sql stable as $$ select (p_at at time zone 'Asia/Riyadh')::date $$;
 
 -- Period month: defaults from the entry date, and must be an open month:
 -- not closed, not in the future, and inside the retention window.
@@ -361,7 +454,9 @@ $$;
 create or replace function public.set_period_month()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
-  v_date date := case when tg_table_name = 'topups' then to_jsonb(new) ->> 'transfer_date' else to_jsonb(new) ->> 'expense_date' end;
+  v_date date := case tg_table_name when 'topups' then to_jsonb(new) ->> 'transfer_date'
+                                    when 'cash_moves' then to_jsonb(new) ->> 'move_date'
+                                    else to_jsonb(new) ->> 'expense_date' end;
 begin
   new.period_month := date_trunc('month', coalesce(new.period_month, v_date, current_date))::date;
   if tg_op = 'INSERT' or new.period_month is distinct from old.period_month then
@@ -380,6 +475,36 @@ end $$;
 -- named "a_..." so it runs before the other BEFORE triggers (Postgres fires them by name)
 create trigger a_period_topups before insert or update on public.topups for each row execute function public.set_period_month();
 create trigger a_period_expenses before insert or update on public.expenses for each row execute function public.set_period_month();
+create trigger a_period_cash before insert or update on public.cash_moves for each row execute function public.set_period_month();
+
+-- Cash moves: what was moved and when is fixed once saved (reverse and re-enter
+-- instead); only the check mark, reversal and month can change.
+create or replace function public.guard_cash_move()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status <> 'posted' or new.checked_by is not null then
+      raise exception 'new cash entries start as posted and unchecked';
+    end if;
+    if not exists (select 1 from public.wallets where id = new.wallet_id and active) then
+      raise exception 'this wallet is inactive';
+    end if;
+    if new.move_date > public.local_today() then
+      raise exception 'the date cannot be in the future';
+    end if;
+    return new;
+  end if;
+  if old.status = 'reversed' and (to_jsonb(new) - 'odoo_sync' - 'odoo_move_id' - 'period_month')
+                              <> (to_jsonb(old) - 'odoo_sync' - 'odoo_move_id' - 'period_month') then
+    raise exception 'reversed cash entries are read only';
+  end if;
+  if (new.wallet_id, new.kind, new.amount, new.move_date, new.created_by, new.created_at, new.client_id)
+     is distinct from (old.wallet_id, old.kind, old.amount, old.move_date, old.created_by, old.created_at, old.client_id) then
+    raise exception 'cash entries cannot be edited; ask finance to reverse it and enter it again';
+  end if;
+  return new;
+end $$;
+create trigger guard_cash before insert or update on public.cash_moves for each row execute function public.guard_cash_move();
 
 create or replace function public.guard_topup_update()
 returns trigger language plpgsql as $$
@@ -501,6 +626,40 @@ begin
   return t;
 end $$;
 
+create or replace function public.set_cash_checked(p_id uuid, p_checked boolean, p_note text default null)
+returns public.cash_moves
+language plpgsql security definer set search_path = public
+as $$
+declare c public.cash_moves;
+begin
+  if not public.sees_everything() then raise exception 'only accounts and finance can check entries' using errcode = '42501'; end if;
+  update public.cash_moves set
+    checked_by = case when p_checked then auth.uid() end,
+    checked_at = case when p_checked then now() end,
+    check_note = nullif(trim(p_note), '')
+  where id = p_id
+  returning * into c;
+  if not found then raise exception 'cash entry not found'; end if;
+  return c;
+end $$;
+
+create or replace function public.reverse_cash_move(p_id uuid, p_reason text)
+returns public.cash_moves
+language plpgsql security definer set search_path = public
+as $$
+declare c public.cash_moves;
+begin
+  if not public.is_admin() then raise exception 'only finance admins can reverse' using errcode = '42501'; end if;
+  if coalesce(trim(p_reason), '') = '' then raise exception 'a reason is required'; end if;
+  update public.cash_moves set status = 'reversed', reversed_by = auth.uid(), reversed_at = now(), reversal_reason = trim(p_reason)
+  where id = p_id and status = 'posted'
+  returning * into c;
+  if not found then raise exception 'cash entry not found or already reversed'; end if;
+  -- a reversed entry no longer counts as matched to the bank
+  update public.bank_lines set matched_type = null, matched_id = null, days_late = null where matched_type = 'cash_move' and matched_id = p_id;
+  return c;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Balances and reporting (security_invoker: callers only see what RLS allows)
 -- ---------------------------------------------------------------------------
@@ -514,13 +673,23 @@ select
   p.full_name as custodian_name,
   w.active,
   w.opening_balance,
+  w.opening_cash,
   coalesce(t.total, 0)::numeric(14,2)  as topups_total,
   coalesce(e.spent, 0)::numeric(14,2)  as spent_total,
   coalesce(e.spent_card, 0)::numeric(14,2) as spent_card,
   coalesce(e.spent_cash, 0)::numeric(14,2) as spent_cash,
   coalesce(e.unchecked, 0)::integer    as unchecked_count,
-  -- the balance the app shows, and what the bank statement should match
-  (w.opening_balance + coalesce(t.total, 0) - coalesce(e.spent, 0))::numeric(14,2) as available_balance
+  coalesce(c.withdrawn, 0)::numeric(14,2)   as withdrawn,
+  coalesce(c.deposited, 0)::numeric(14,2)   as deposited,
+  coalesce(c.handed_over, 0)::numeric(14,2) as handed_over,
+  -- card + cash in hand
+  (w.opening_balance + coalesce(t.total, 0) - coalesce(e.spent, 0) - coalesce(c.handed_over, 0))::numeric(14,2) as available_balance,
+  -- what should be on the card (compare with the bank statement)
+  (w.opening_balance - w.opening_cash + coalesce(t.total, 0) - coalesce(e.spent_card, 0)
+     - coalesce(c.withdrawn, 0) + coalesce(c.deposited, 0))::numeric(14,2) as card_balance,
+  -- what the holder should have in cash
+  (w.opening_cash + coalesce(c.withdrawn, 0) - coalesce(c.deposited, 0) - coalesce(c.handed_over, 0)
+     - coalesce(e.spent_cash, 0))::numeric(14,2) as cash_in_hand
 from public.wallets w
 left join public.profiles p on p.id = w.custodian_id
 left join lateral (
@@ -532,7 +701,13 @@ left join lateral (
          sum(amount) filter (where status = 'recorded' and paid_by = 'cash') as spent_cash,
          count(*) filter (where status = 'recorded' and checked_by is null) as unchecked
   from public.expenses where wallet_id = w.id
-) e on true;
+) e on true
+left join lateral (
+  select sum(amount) filter (where kind = 'withdrawal') as withdrawn,
+         sum(amount) filter (where kind = 'deposit') as deposited,
+         sum(amount) filter (where kind = 'handover') as handed_over
+  from public.cash_moves where wallet_id = w.id and status = 'posted'
+) c on true;
 
 -- One flat ledger of money in and out, for statements and exports.
 create view public.ledger with (security_invoker = true) as
@@ -555,7 +730,13 @@ select
   e.submitted_by, e.expense_date, e.period_month,
   nullif(concat_ws(' - ', e.paid_by::text, nullif(e.vendor, ''), e.description), ''),
   0, e.amount, e.vat_amount, e.status::text, e.created_at
-from public.expenses e;
+from public.expenses e
+union all
+select
+  'cash_' || c.kind::text, c.id, c.external_id, c.wallet_id, null, null,
+  c.created_by, c.move_date, c.period_month, c.notes,
+  0, case when c.kind = 'handover' then c.amount else 0 end, 0, c.status::text, c.created_at
+from public.cash_moves c;
 
 -- Dashboard totals for a period month (or date range) and optional filters.
 create or replace function public.dashboard_summary(
@@ -610,23 +791,26 @@ as $$
 $$;
 
 -- One row per wallet for the dashboard, so the figures always add up on screen:
---   opening + transferred - spent = balance.
--- With a month: opening is the balance at the start of that month, and balance is at its end.
--- With no month: opening is what was brought forward from closed months, and balance is now.
+--   opening + transferred - spent - returned = balance   (returned = cash handed back to the office)
+-- With a month: opening is the balance at the start of that month, balance and cash at its end.
+-- With no month: opening is what was brought forward from closed months; balance and cash are now.
 create or replace function public.wallet_month_summary(p_month date default null)
 returns table (
   wallet_id uuid, name text, card_last4 text, custodian_name text, active boolean,
-  opening numeric, transferred numeric, spent numeric, vat numeric, balance numeric
+  opening numeric, transferred numeric, spent numeric, vat numeric, returned numeric, balance numeric, cash_in_hand numeric
 )
 language sql stable security invoker set search_path = public
 as $$
   select
     w.id, w.name, w.card_last4, p.full_name, w.active,
-    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0))::numeric(14,2),
+    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0) - coalesce(c.ho_before, 0))::numeric(14,2),
     coalesce(t.inside, 0)::numeric(14,2),
     coalesce(e.inside, 0)::numeric(14,2),
     coalesce(e.vat, 0)::numeric(14,2),
-    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0) + coalesce(t.inside, 0) - coalesce(e.inside, 0))::numeric(14,2)
+    coalesce(c.ho_inside, 0)::numeric(14,2),
+    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0) - coalesce(c.ho_before, 0)
+       + coalesce(t.inside, 0) - coalesce(e.inside, 0) - coalesce(c.ho_inside, 0))::numeric(14,2),
+    (w.opening_cash + coalesce(c.cash_to_end, 0) - coalesce(e.cash_to_end, 0))::numeric(14,2)
   from public.wallets w
   left join public.profiles p on p.id = w.custodian_id
   left join lateral (
@@ -637,10 +821,54 @@ as $$
   left join lateral (
     select sum(amount) filter (where p_month is not null and period_month < p_month) as before,
            sum(amount) filter (where p_month is null or period_month = p_month) as inside,
-           sum(vat_amount) filter (where p_month is null or period_month = p_month) as vat
+           sum(vat_amount) filter (where p_month is null or period_month = p_month) as vat,
+           sum(amount) filter (where paid_by = 'cash' and (p_month is null or period_month <= p_month)) as cash_to_end
     from public.expenses where wallet_id = w.id and status = 'recorded'
   ) e on true
+  left join lateral (
+    select sum(amount) filter (where kind = 'handover' and p_month is not null and period_month < p_month) as ho_before,
+           sum(amount) filter (where kind = 'handover' and (p_month is null or period_month = p_month)) as ho_inside,
+           sum(case kind when 'withdrawal' then amount else -amount end) filter (where p_month is null or period_month <= p_month) as cash_to_end
+    from public.cash_moves where wallet_id = w.id and status = 'posted'
+  ) c on true
   order by w.active desc, w.name
+$$;
+
+-- Cash in hand, oldest first: each withdrawal (and the cash brought forward) is used up
+-- by cash spending, deposits and handovers in order. Whatever is left of a withdrawal
+-- older than cash_hold_days is "held too long".
+create or replace function public.cash_held()
+returns table (wallet_id uuid, cash_in_hand numeric, held_too_long numeric, oldest_days integer)
+language sql stable security invoker set search_path = public
+as $$
+  with ins as (
+    select w.id as wallet_id, public.open_month_from() as d, w.opening_cash as amount, 0 as seq
+      from public.wallets w where w.opening_cash > 0
+    union all
+    select c.wallet_id, c.move_date, c.amount, 1
+      from public.cash_moves c where c.kind = 'withdrawal' and c.status = 'posted'
+  ),
+  outs as (
+    select wallet_id, sum(amount) as total from (
+      select wallet_id, amount from public.expenses where paid_by = 'cash' and status = 'recorded'
+      union all
+      select wallet_id, amount from public.cash_moves where kind in ('deposit', 'handover') and status = 'posted'
+    ) x group by wallet_id
+  ),
+  layered as (
+    select i.*, sum(i.amount) over (partition by i.wallet_id order by i.d, i.seq rows unbounded preceding) as cum_end
+    from ins i
+  ),
+  left_over as (
+    select l.wallet_id, l.d,
+           greatest(0, least(l.amount, l.cum_end - coalesce(o.total, 0))) as remaining
+    from layered l left join outs o on o.wallet_id = l.wallet_id
+  )
+  select b.wallet_id, b.cash_in_hand,
+         coalesce((select sum(remaining) from left_over x where x.wallet_id = b.wallet_id and x.remaining > 0
+                     and public.local_today() - x.d > public.setting_numeric('cash_hold_days', 4)), 0)::numeric(14,2),
+         (select max(public.local_today() - x.d) from left_over x where x.wallet_id = b.wallet_id and x.remaining > 0)::integer
+  from public.wallet_balances b
 $$;
 
 -- Spend grouped by a dimension, for the dashboard tables.
@@ -692,9 +920,12 @@ declare
   v_balance numeric; r public.statement_checks;
 begin
   if not public.is_admin() then raise exception 'only finance admins can reconcile' using errcode = '42501'; end if;
-  select w.opening_balance
+  -- the bank statement shows the card, so compare with the card part of the wallet
+  select w.opening_balance - w.opening_cash
        + coalesce((select sum(amount) from public.topups where wallet_id = w.id and status = 'posted' and transfer_date <= p_statement_date), 0)
-       - coalesce((select sum(amount) from public.expenses where wallet_id = w.id and status = 'recorded' and expense_date <= p_statement_date), 0)
+       - coalesce((select sum(amount) from public.expenses where wallet_id = w.id and status = 'recorded' and paid_by = 'card' and expense_date <= p_statement_date), 0)
+       - coalesce((select sum(case kind when 'withdrawal' then amount when 'deposit' then -amount else 0 end)
+                     from public.cash_moves where wallet_id = w.id and status = 'posted' and move_date <= p_statement_date), 0)
     into v_balance
     from public.wallets w where w.id = p_wallet_id;
   if v_balance is null then raise exception 'wallet not found'; end if;
@@ -703,6 +934,215 @@ begin
   returning * into r;
   return r;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Bank statement matching
+-- ---------------------------------------------------------------------------
+-- What a statement line is, from its description (Alinma and SNB wording, English and Arabic).
+create or replace function public.bank_line_kind(p_amount numeric, p_description text)
+returns text language sql immutable as $$
+  select case
+    -- bank charges: SNB writes them as their own lines ("Transfer Fees", "VAT Charge");
+    -- a transfer that merely mentions fees in its text is still a transfer
+    when p_description ~* '^\s*(vat charge|transfer fees?|fees?|commission|charges?|رسوم|عمولة|ضريبة)' or p_description ~* '\m(vat charge|transfer fees?)\M' then 'fee'
+    when p_amount < 0 and p_description ~* '(atm|cash withdrawal|سحب نقدي|صراف)' then 'withdrawal'
+    when p_amount < 0 and p_description ~* '(transfer|حوالة|تحويل)' and p_description !~* '(\mpos\M|mada|مدى|نقاط البيع)' then 'transfer_out'
+    when p_amount < 0 then 'swipe'
+    when p_description ~* '(cash deposit|ايداع نقدي|إيداع نقدي)' then 'deposit'
+    else 'transfer_in'
+  end
+$$;
+
+-- Pair unmatched statement lines with the app's entries: same wallet, same amount,
+-- nearest date inside the window. Cash withdrawals use a wider window, and the days
+-- between the bank date and the day the withdrawal was entered are kept as days_late.
+create or replace function public.match_bank(p_wallet_id uuid)
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  l record; v_id uuid; v_n integer := 0;
+  v_days integer := public.setting_numeric('bank_match_days', 3)::int;
+  v_cash_days integer := public.setting_numeric('bank_match_days_cash', 10)::int;
+begin
+  if not public.sees_everything() then raise exception 'only accounts and finance' using errcode = '42501'; end if;
+  for l in select * from public.bank_lines where wallet_id = p_wallet_id and matched_id is null and kind <> 'fee' order by txn_date, id loop
+    v_id := null;
+    if l.kind = 'withdrawal' then
+      select c.id into v_id from public.cash_moves c
+       where c.wallet_id = l.wallet_id and c.kind = 'withdrawal' and c.status = 'posted' and c.amount = -l.amount
+         and abs(c.move_date - l.txn_date) <= v_cash_days
+         and not exists (select 1 from public.bank_lines b where b.matched_type = 'cash_move' and b.matched_id = c.id)
+       order by abs(c.move_date - l.txn_date), c.created_at limit 1;
+      if v_id is not null then
+        update public.bank_lines set matched_type = 'cash_move', matched_id = v_id,
+          days_late = greatest(0, (select public.local_date(created_at) from public.cash_moves where id = v_id) - l.txn_date)
+        where id = l.id;
+      end if;
+    elsif l.kind = 'deposit' then
+      select c.id into v_id from public.cash_moves c
+       where c.wallet_id = l.wallet_id and c.kind = 'deposit' and c.status = 'posted' and c.amount = l.amount
+         and abs(c.move_date - l.txn_date) <= v_cash_days
+         and not exists (select 1 from public.bank_lines b where b.matched_type = 'cash_move' and b.matched_id = c.id)
+       order by abs(c.move_date - l.txn_date), c.created_at limit 1;
+      if v_id is not null then
+        update public.bank_lines set matched_type = 'cash_move', matched_id = v_id where id = l.id;
+      end if;
+    elsif l.kind = 'transfer_in' then
+      select t.id into v_id from public.topups t
+       where t.wallet_id = l.wallet_id and t.status = 'posted' and t.amount = l.amount
+         and abs(t.transfer_date - l.txn_date) <= v_days
+         and not exists (select 1 from public.bank_lines b where b.matched_type = 'topup' and b.matched_id = t.id)
+       order by abs(t.transfer_date - l.txn_date), t.created_at limit 1;
+      if v_id is not null then
+        update public.bank_lines set matched_type = 'topup', matched_id = v_id where id = l.id;
+      end if;
+    else  -- swipe or outgoing transfer: a card expense
+      select e.id into v_id from public.expenses e
+       where e.wallet_id = l.wallet_id and e.paid_by = 'card' and e.status = 'recorded' and e.amount = -l.amount
+         and abs(e.expense_date - l.txn_date) <= v_days
+         and not exists (select 1 from public.bank_lines b where b.matched_type = 'expense' and b.matched_id = e.id)
+       order by abs(e.expense_date - l.txn_date), e.created_at limit 1;
+      if v_id is not null then
+        update public.bank_lines set matched_type = 'expense', matched_id = v_id where id = l.id;
+      end if;
+    end if;
+    if v_id is not null then v_n := v_n + 1; end if;
+  end loop;
+  return v_n;
+end $$;
+
+-- Upload a statement: p_lines is [{date: 'YYYY-MM-DD', amount: -12.50, description: '...'}]
+-- as read from the Excel file by the web app. Lines already uploaded are skipped.
+create or replace function public.import_bank_lines(p_wallet_id uuid, p_file_name text, p_lines jsonb)
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare v_import uuid; v_new integer; v_matched integer; v_total integer := jsonb_array_length(coalesce(p_lines, '[]'));
+begin
+  if not public.sees_everything() then raise exception 'only accounts and finance can upload statements' using errcode = '42501'; end if;
+  if not exists (select 1 from public.wallets where id = p_wallet_id) then raise exception 'wallet not found'; end if;
+  if v_total = 0 then raise exception 'the file has no transactions'; end if;
+  insert into public.bank_imports (wallet_id, file_name, date_from, date_to, line_count, new_lines)
+  select p_wallet_id, coalesce(nullif(trim(p_file_name), ''), 'statement'), min((x ->> 'date')::date), max((x ->> 'date')::date), v_total, 0
+    from jsonb_array_elements(p_lines) x
+  returning id into v_import;
+
+  with src as (
+    select (x ->> 'date')::date as d, round((x ->> 'amount')::numeric, 2) as amount, coalesce(trim(x ->> 'description'), '') as descr
+      from jsonb_array_elements(p_lines) x
+     where coalesce((x ->> 'amount')::numeric, 0) <> 0
+  ),
+  numbered as (  -- two identical lines on the same day are two transactions
+    select *, row_number() over (partition by d, amount, descr) as n from src
+  ),
+  ins as (
+    insert into public.bank_lines (wallet_id, import_id, txn_date, amount, description, line_hash, kind)
+    select p_wallet_id, v_import, d, amount, descr, md5(concat_ws('|', d, amount, descr, n)), public.bank_line_kind(amount, descr)
+      from numbered
+    on conflict (wallet_id, line_hash) do nothing
+    returning 1
+  )
+  select count(*) into v_new from ins;
+  update public.bank_imports set new_lines = v_new where id = v_import;
+  v_matched := public.match_bank(p_wallet_id);
+  return jsonb_build_object('import_id', v_import, 'lines', v_total, 'new_lines', v_new, 'matched', v_matched);
+end $$;
+
+-- Accounts mark a statement line as dealt with (e.g. "personal, staff repaid"), with a note.
+create or replace function public.resolve_bank_line(p_id uuid, p_resolved boolean, p_note text default null)
+returns public.bank_lines
+language plpgsql security definer set search_path = public
+as $$
+declare r public.bank_lines;
+begin
+  if not public.sees_everything() then raise exception 'only accounts and finance' using errcode = '42501'; end if;
+  update public.bank_lines set
+    resolved_by = case when p_resolved then auth.uid() end,
+    resolved_at = case when p_resolved then now() end,
+    note = nullif(trim(p_note), '')
+  where id = p_id returning * into r;
+  if not found then raise exception 'statement line not found'; end if;
+  return r;
+end $$;
+
+-- The statement check for one wallet, section by section:
+--   matched, late (withdrawal entered after the bank date), bank_only (in the bank, not in
+--   the app), app_only (in the app inside the statement's dates, not in the bank), fee.
+create or replace function public.bank_report(p_wallet_id uuid)
+returns table (section text, entry_date date, amount numeric, description text, line_id uuid,
+               ref_type text, ref_id uuid, entered_on date, days_late integer, resolved boolean, note text)
+language sql stable security definer set search_path = public
+as $$
+  with cover as (
+    select min(date_from) as d_from, max(date_to) as d_to from public.bank_imports where wallet_id = p_wallet_id
+  ),
+  lines as (
+    select b.*,
+      case b.matched_type
+        when 'expense' then (select public.local_date(created_at) from public.expenses where id = b.matched_id)
+        when 'cash_move' then (select public.local_date(created_at) from public.cash_moves where id = b.matched_id)
+        when 'topup' then (select public.local_date(created_at) from public.topups where id = b.matched_id)
+      end as entered_on
+    from public.bank_lines b where b.wallet_id = p_wallet_id
+  )
+  select case when kind = 'fee' then 'fee'
+              when matched_id is null then 'bank_only'
+              when coalesce(days_late, 0) > 0 then 'late'
+              else 'matched' end,
+         txn_date, amount, description, id, matched_type, matched_id, entered_on, days_late, resolved_at is not null, note
+    from lines
+   where public.sees_everything()
+  union all
+  select 'app_only', a.d, a.amount, a.descr, null, a.t, a.id, public.local_date(a.created_at), null, false, null
+    from (
+      select 'expense' as t, e.id, e.expense_date as d, -e.amount as amount, concat_ws(' · ', nullif(e.vendor, ''), e.description) as descr, e.created_at
+        from public.expenses e where e.wallet_id = p_wallet_id and e.paid_by = 'card' and e.status = 'recorded'
+      union all
+      select 'cash_move', c.id, c.move_date, case c.kind when 'withdrawal' then -c.amount else c.amount end,
+             case c.kind when 'withdrawal' then 'Cash withdrawal' else 'Cash deposited to card' end, c.created_at
+        from public.cash_moves c where c.wallet_id = p_wallet_id and c.kind in ('withdrawal', 'deposit') and c.status = 'posted'
+      union all
+      select 'topup', t.id, t.transfer_date, t.amount, coalesce(t.reference, 'Transfer in'), t.created_at
+        from public.topups t where t.wallet_id = p_wallet_id and t.status = 'posted'
+    ) a, cover
+   where public.sees_everything()
+     and a.d between cover.d_from and cover.d_to - public.setting_numeric('bank_match_days', 3)::int
+     and not exists (select 1 from public.bank_lines b where b.matched_type = a.t and b.matched_id = a.id)
+  order by 2 desc
+$$;
+
+-- Everything that needs a look, for the dashboard and the alert email.
+create or replace function public.attention_flags()
+returns table (wallet_id uuid, wallet_name text, custodian_name text, kind text, message text, amount numeric, days integer)
+language sql stable security definer set search_path = public
+as $$
+  with w as (select b.*, h.held_too_long, h.oldest_days from public.wallet_balances b join public.cash_held() h using (wallet_id))
+  select w.wallet_id, w.name, w.custodian_name, 'cash_held',
+         format('%s holds SAR %s cash for more than %s days (oldest %s days)', coalesce(w.custodian_name, w.name),
+                to_char(w.held_too_long, 'FM999,999,990.00'), public.setting_numeric('cash_hold_days', 4)::int, w.oldest_days),
+         w.held_too_long, w.oldest_days
+    from w where w.held_too_long > 0
+  union all
+  select b.wallet_id, wl.name, p.full_name, 'late_entry',
+         format('Cash withdrawal of SAR %s on %s was entered %s day%s late', to_char(-b.amount, 'FM999,999,990.00'),
+                to_char(b.txn_date, 'DD Mon'), b.days_late, case when b.days_late = 1 then '' else 's' end),
+         -b.amount, b.days_late
+    from public.bank_lines b join public.wallets wl on wl.id = b.wallet_id left join public.profiles p on p.id = wl.custodian_id
+   where b.matched_type = 'cash_move' and b.days_late > 0 and b.resolved_at is null
+  union all
+  select b.wallet_id, wl.name, p.full_name, 'bank_only',
+         format('%s in the bank on %s but not in the app: %s', case when b.amount < 0 then 'SAR ' || to_char(-b.amount, 'FM999,999,990.00') || ' out' else 'SAR ' || to_char(b.amount, 'FM999,999,990.00') || ' in' end,
+                to_char(b.txn_date, 'DD Mon'), left(b.description, 60)),
+         abs(b.amount), public.local_today() - b.txn_date
+    from public.bank_lines b join public.wallets wl on wl.id = b.wallet_id left join public.profiles p on p.id = wl.custodian_id
+   where b.matched_id is null and b.kind <> 'fee' and b.resolved_at is null
+  union all
+  select w.wallet_id, w.name, w.custodian_name, 'negative',
+         format('%s is below zero (SAR %s): a transfer may still need recording', w.name, to_char(w.available_balance, 'FM999,999,990.00')),
+         w.available_balance, null
+    from w where w.available_balance < 0
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Monthly close
@@ -719,6 +1159,9 @@ as $$
     || '#' ||
     coalesce((select string_agg(concat_ws('|', id, status, amount, wallet_id, attachment_path), ',' order by id)
                 from public.topups where period_month = p_month), '')
+    || '#' ||
+    coalesce((select string_agg(concat_ws('|', id, status, kind, amount, wallet_id), ',' order by id)
+                from public.cash_moves where period_month = p_month), '')
   )
 $$;
 
@@ -731,6 +1174,7 @@ as $$
   with months as (
     select period_month as m from public.expenses
     union select period_month from public.topups
+    union select period_month from public.cash_moves
     union select date_trunc('month', current_date)::date
   )
   select
@@ -778,6 +1222,7 @@ declare
   v_month date := date_trunc('month', p_month)::date;
   v_expense_ids uuid[];
   v_topup_ids uuid[];
+  v_cash_ids uuid[];
   v_files text[];
   v_carried jsonb;
   r public.closed_months;
@@ -795,9 +1240,10 @@ begin
   end if;
 
   -- stop new entries and edits while we work
-  lock table public.expenses, public.topups in share row exclusive mode;
+  lock table public.expenses, public.topups, public.cash_moves in share row exclusive mode;
 
-  if exists (select 1 from public.expenses where period_month < v_month) or exists (select 1 from public.topups where period_month < v_month) then
+  if exists (select 1 from public.expenses where period_month < v_month) or exists (select 1 from public.topups where period_month < v_month)
+     or exists (select 1 from public.cash_moves where period_month < v_month) then
     raise exception 'close the older months first';
   end if;
   if not coalesce((select fingerprint = public.month_fingerprint(v_month) from public.month_exports
@@ -809,20 +1255,26 @@ begin
     into v_expense_ids, v_files from public.expenses where period_month = v_month;
   select coalesce(array_agg(id), '{}'), v_files || coalesce(array_agg('attachments/' || attachment_path) filter (where coalesce(attachment_path, '') <> ''), '{}')
     into v_topup_ids, v_files from public.topups where period_month = v_month;
+  select coalesce(array_agg(id), '{}') into v_cash_ids from public.cash_moves where period_month = v_month;
 
-  -- net movement per wallet: posted top-ups minus every non-reversed expense
-  select coalesce(jsonb_agg(jsonb_build_object('wallet_id', w.id, 'name', w.name, 'net', n.net) order by w.name), '[]')
+  -- net movement per wallet (top-ups minus expenses minus cash handed back), and the
+  -- change in cash in hand, both carried into the wallet's opening figures
+  select coalesce(jsonb_agg(jsonb_build_object('wallet_id', w.id, 'name', w.name, 'net', n.net, 'cash', n.cash) order by w.name), '[]')
     into v_carried
     from (
-      select wallet_id, sum(amount) as net from (
-        select wallet_id, amount from public.topups where period_month = v_month and status = 'posted'
+      select wallet_id, sum(net) as net, sum(cash) as cash from (
+        select wallet_id, amount as net, 0 as cash from public.topups where period_month = v_month and status = 'posted'
         union all
-        select wallet_id, -amount from public.expenses where period_month = v_month and status = 'recorded'
+        select wallet_id, -amount, case when paid_by = 'cash' then -amount else 0 end from public.expenses where period_month = v_month and status = 'recorded'
+        union all
+        select wallet_id, case when kind = 'handover' then -amount else 0 end, case when kind = 'withdrawal' then amount else -amount end
+          from public.cash_moves where period_month = v_month and status = 'posted'
       ) m group by wallet_id
     ) n join public.wallets w on w.id = n.wallet_id;
 
-  for x in select (j ->> 'wallet_id')::uuid as id, (j ->> 'net')::numeric as net from jsonb_array_elements(v_carried) j loop
-    update public.wallets set opening_balance = opening_balance + x.net where id = x.id;
+  for x in select (j ->> 'wallet_id')::uuid as id, (j ->> 'net')::numeric as net, coalesce((j ->> 'cash')::numeric, 0) as cash
+             from jsonb_array_elements(v_carried) j loop
+    update public.wallets set opening_balance = opening_balance + x.net, opening_cash = opening_cash + x.cash where id = x.id;
   end loop;
 
   insert into public.closed_months (month, expense_count, expense_total, topup_count, topup_total, carried, files_pending, closed_by)
@@ -838,10 +1290,16 @@ begin
   perform set_config('xc.closing', 'on', true);
   delete from public.expenses where id = any (v_expense_ids);
   delete from public.topups where id = any (v_topup_ids);
+  delete from public.cash_moves where id = any (v_cash_ids);
+  -- statement lines up to the end of the month go too (they hold the same information)
+  delete from public.bank_lines where txn_date < (v_month + interval '1 month')::date;
+  delete from public.bank_imports i where not exists (select 1 from public.bank_lines b where b.import_id = i.id)
+    and i.date_to < (v_month + interval '1 month')::date;
   -- the per-row history would otherwise keep the erased data; the closed_months row
   -- (and its own audit entry) is the record that the month existed
   delete from public.audit_log where table_name = 'expenses' and record_id = any (select unnest(v_expense_ids)::text);
   delete from public.audit_log where table_name = 'topups' and record_id = any (select unnest(v_topup_ids)::text);
+  delete from public.audit_log where table_name = 'cash_moves' and record_id = any (select unnest(v_cash_ids)::text);
   delete from public.month_exports where month = v_month;
   perform set_config('xc.closing', 'off', true);
   return r;
@@ -883,6 +1341,9 @@ alter table public.categories        enable row level security;
 alter table public.settings          enable row level security;
 alter table public.topups            enable row level security;
 alter table public.expenses          enable row level security;
+alter table public.cash_moves        enable row level security;
+alter table public.bank_imports      enable row level security;
+alter table public.bank_lines        enable row level security;
 alter table public.statement_checks  enable row level security;
 alter table public.month_exports     enable row level security;
 alter table public.closed_months     enable row level security;
@@ -939,6 +1400,19 @@ create policy expenses_owner_update on public.expenses for update to authenticat
 create policy expenses_admin_update on public.expenses for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
+-- cash moves: staff log them on their own wallet; nobody edits (reverse instead); finance can log for anyone.
+create policy cash_moves_read on public.cash_moves for select to authenticated
+  using (public.sees_everything() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid()));
+create policy cash_moves_insert on public.cash_moves for insert to authenticated
+  with check (created_by = auth.uid() and status = 'posted'
+              and (public.is_admin() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid())));
+create policy cash_moves_admin_update on public.cash_moves for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- statements: accounts and finance only, written through the RPCs above
+create policy bank_imports_read on public.bank_imports for select to authenticated using (public.sees_everything());
+create policy bank_lines_read on public.bank_lines for select to authenticated using (public.sees_everything());
+
 create policy statement_checks_read on public.statement_checks for select to authenticated using (public.sees_everything());
 create policy month_exports_read on public.month_exports for select to authenticated using (public.sees_everything());
 create policy closed_months_read on public.closed_months for select to authenticated using (public.sees_everything());
@@ -952,7 +1426,9 @@ begin
     'set_checked(uuid, boolean, text)', 'reverse_expense(uuid, text)', 'reverse_topup(uuid, text)',
     'record_statement_check(uuid, date, numeric, text)', 'dashboard_summary(date, date, uuid, uuid, uuid, date)', 'wallet_month_summary(date)',
     'spend_breakdown(text, date, date, uuid, uuid, date)', 'month_fingerprint(date)', 'month_overview()',
-    'record_month_export(date, integer)', 'close_month(date, text)', 'mark_files_removed(date, text[])', 'storage_usage()'
+    'record_month_export(date, integer)', 'close_month(date, text)', 'mark_files_removed(date, text[])', 'storage_usage()',
+    'set_cash_checked(uuid, boolean, text)', 'reverse_cash_move(uuid, text)', 'cash_held()', 'match_bank(uuid)',
+    'import_bank_lines(uuid, text, jsonb)', 'resolve_bank_line(uuid, boolean, text)', 'bank_report(uuid)', 'attention_flags()'
   ] loop
     execute format('revoke execute on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
@@ -963,7 +1439,7 @@ end $$;
 -- RLS still decides who receives what).
 do $$ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    alter publication supabase_realtime add table public.expenses, public.topups;
+    alter publication supabase_realtime add table public.expenses, public.topups, public.cash_moves;
   end if;
 end $$;
 
