@@ -31,6 +31,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const isPhoneApp = path.startsWith("/app");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Staff always use the phone screens; admins and accounts can open them too.
   useEffect(() => {
@@ -56,9 +57,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const items = NAV.filter((n) => n.roles.includes(profile.role));
   return (
     <div className="layout">
-      <nav className="nav">
+      <nav className={`nav${menuOpen ? " open" : ""}`} onClick={(e) => (e.target as HTMLElement).closest("a") && setMenuOpen(false)}>
         <div className="brand">
           <Wordmark />
+          <button className="menu-btn" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         </div>
         {items.map((n) => (
           <Link key={n.href} href={n.href} className={(n.href === "/" ? path === "/" : path.startsWith(n.href)) ? "active" : undefined}>

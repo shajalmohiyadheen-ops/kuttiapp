@@ -279,3 +279,23 @@ a.btn { font: inherit; border-radius: 10px; padding: 9px 16px; border: 1px solid
 @media (max-width: 800px) { .invite { grid-template-columns: 1fr; } }
 .phone .bell { position: static; }
 .phone .bell-menu { position: fixed; left: 12px; right: 12px; width: auto; top: calc(max(14px, env(safe-area-inset-top)) + 54px); }
+
+/* admin screens on a phone: compact top bar, menu behind ☰ */
+.nav .menu-btn { display: none; }
+@media (max-width: 800px) {
+  .nav { flex-direction: column; flex-wrap: nowrap; padding: 10px 14px; }
+  .nav .brand { display: flex; align-items: center; justify-content: space-between; padding: 0 64px 0 0; }
+  .nav .menu-btn { display: block; font-size: 24px; line-height: 1; padding: 6px 10px; background: none; border: 0; color: var(--brand); }
+  .nav:not(.open) > :not(.brand) { display: none; }
+  .nav.open > a { padding: 12px; }
+  .topbar { position: absolute; top: -56px; right: 12px; }
+  .main { padding-top: 16px; }
+  .tiles.four { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .tile .value { font-size: 20px; }
+  .tile { padding: 12px; }
+  .tally { font-size: 14px; }
+  .main h1 { font-size: 22px; }
+}
+@media (max-width: 420px) { .tile .value { font-size: 17px; } .tile .label { font-size: 13px; } }
