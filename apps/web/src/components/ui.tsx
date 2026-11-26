@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { formatSar, fromDb, monthLabel, openMonths, type ExpenseStatus, type TopupStatus } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { subscribeLive } from "@/lib/supabase";
@@ -18,23 +18,39 @@ export function Money({ value, direction }: { value: number | string | null | un
   );
 }
 
+type Theme = "dark" | "light";
+const currentTheme = (): Theme => (typeof document !== "undefined" && document.documentElement.dataset.theme === "light" ? "light" : "dark");
+function applyTheme(v: Theme) {
+  document.documentElement.dataset.theme = v;
+  try {
+    localStorage.setItem("xc.theme", v);
+  } catch {}
+  window.dispatchEvent(new Event("xc-theme"));
+}
+const onThemeChange = (cb: () => void) => (window.addEventListener("xc-theme", cb), () => window.removeEventListener("xc-theme", cb));
+/** The theme now, kept in step with every switch on the page and with the phone's own setting. */
+function useTheme(): Theme {
+  return useSyncExternalStore(onThemeChange, currentTheme, () => "dark");
+}
+
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof document === "undefined") return "dark";
-    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
-  });
-  const set = (v: "dark" | "light") => {
-    setTheme(v);
-    document.documentElement.dataset.theme = v;
-    try {
-      localStorage.setItem("xc.theme", v);
-    } catch {}
-  };
+  const theme = useTheme();
   return (
     <div className="theme-toggle" role="group" aria-label="Theme">
-      <button className={theme === "dark" ? "on" : undefined} onClick={() => set("dark")}>🌙</button>
-      <button className={theme === "light" ? "on" : undefined} onClick={() => set("light")}>☀️</button>
+      <button className={theme === "dark" ? "on" : undefined} onClick={() => applyTheme("dark")} aria-label="Night mode">🌙</button>
+      <button className={theme === "light" ? "on" : undefined} onClick={() => applyTheme("light")} aria-label="Day mode">☀️</button>
     </div>
+  );
+}
+
+/** One round button for headers: shows the mode you can switch to. */
+export function ThemeSwitch() {
+  const theme = useTheme();
+  const next: Theme = theme === "dark" ? "light" : "dark";
+  return (
+    <button className="theme-switch" onClick={() => applyTheme(next)} aria-label={next === "light" ? "Switch to day mode" : "Switch to night mode"} title={next === "light" ? "Day mode" : "Night mode"}>
+      {next === "light" ? "☀️" : "🌙"}
+    </button>
   );
 }
 

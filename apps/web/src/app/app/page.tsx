@@ -7,7 +7,7 @@ import { formatSar, type CashHeld, type CashMove, type Expense, type Topup, type
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { listDrafts, syncDrafts, type Draft } from "@/lib/drafts";
-import { Money, ThemeToggle, Wordmark, useLive } from "@/components/ui";
+import { Money, ThemeSwitch, ThemeToggle, Wordmark, useLive } from "@/components/ui";
 import { Bell, flagItems, useFlags } from "@/components/bell";
 
 interface HomeData {
@@ -111,6 +111,7 @@ export default function PhoneHome() {
       <header>
         <Wordmark />
         <div className="head-right">
+          <ThemeSwitch />
           <Bell items={flagItems(flags, true)} empty="All good. Nothing needs your attention." />
           <button className="linkbtn" aria-label="Menu" onClick={() => setMenu(!menu)} style={{ fontSize: 26 }}>☰</button>
         </div>

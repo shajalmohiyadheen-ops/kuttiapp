@@ -22,8 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" dir="ltr" data-theme="dark" suppressHydrationWarning>
       <head>
-        {/* Apply the saved theme before first paint so there is no flash. */}
-        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("xc.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}` }} />
+        {/* Before first paint: the saved theme, else follow the phone or computer setting (and keep following it until someone picks one). */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var d=document.documentElement,m=window.matchMedia("(prefers-color-scheme: light)"),t=localStorage.getItem("xc.theme");d.dataset.theme=t==="light"||t==="dark"?t:m.matches?"light":"dark";m.addEventListener("change",function(e){if(!localStorage.getItem("xc.theme")){d.dataset.theme=e.matches?"light":"dark";window.dispatchEvent(new Event("xc-theme"))}})}catch(e){}` }} />
       </head>
       <body>
         <RegisterSW />
