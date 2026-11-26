@@ -6,6 +6,7 @@
     "test": "npm run test -w @expresscash/shared",
     "test:db": "./scripts/test-db.sh",
     "dev:web": "npm run dev -w @expresscash/web",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "weekly-email": "node scripts/weekly-email.mjs"
   }
 }

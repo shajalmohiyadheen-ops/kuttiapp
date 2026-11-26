@@ -8,6 +8,7 @@ import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { listDrafts, syncDrafts, type Draft } from "@/lib/drafts";
 import { Money, ThemeToggle, Wordmark, useLive } from "@/components/ui";
+import { Bell, flagItems, useFlags } from "@/components/bell";
 
 interface HomeData {
   wallet: WalletBalance | null;
@@ -23,13 +24,14 @@ const CACHE = "xc.home.v2";
 const CASH_LABEL = { withdrawal: "🏧 Cash withdrawal", deposit: "↩ Cash put back on card", handover: "↩ Cash handed to office" } as const;
 
 export default function PhoneHome() {
-  const { t, profile, name, setting } = useApp();
+  const { t, profile, name } = useApp();
   const router = useRouter();
   const [data, setData] = useState<HomeData | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [online, setOnline] = useState(true);
   const [menu, setMenu] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const flags = useFlags();
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -97,7 +99,6 @@ export default function PhoneHome() {
   const inHand = w ? (cents(w.cash_in_hand) - queued("cash")) / 100 : 0;
   const shown = (Math.round(onCard * 100) + Math.round(inHand * 100)) / 100;
   const tooLong = Number(data?.held?.held_too_long ?? 0);
-  const holdDays = setting("cash_hold_days", 4);
 
   const feed = [
     ...(data?.expenses ?? []).map((e) => ({ kind: "out" as const, id: e.id, at: e.created_at, e })),
@@ -109,7 +110,10 @@ export default function PhoneHome() {
     <div className="phone">
       <header>
         <Wordmark />
-        <button className="linkbtn" aria-label="Menu" onClick={() => setMenu(!menu)} style={{ fontSize: 26 }}>☰</button>
+        <div className="head-right">
+          <Bell items={flagItems(flags, true)} empty="All good. Nothing needs your attention." />
+          <button className="linkbtn" aria-label="Menu" onClick={() => setMenu(!menu)} style={{ fontSize: 26 }}>☰</button>
+        </div>
       </header>
 
       {menu && (
@@ -117,6 +121,7 @@ export default function PhoneHome() {
           <div className="muted small">{profile?.full_name || profile?.email}</div>
           <ThemeToggle />
           <Link href="/app/install" className="btn" style={{ textAlign: "center" }}>📲 {t("installApp")}</Link>
+          <ChangePassword />
           {profile && profile.role !== "custodian" && <Link href="/">← Admin screens</Link>}
           <button className="btn" onClick={() => supabase().auth.signOut()}>{t("signOut")}</button>
         </div>
@@ -144,15 +149,6 @@ export default function PhoneHome() {
             <span>{t("availableBalance")}</span>
             <b className={shown < 0 ? "money-out" : undefined}>{w ? formatSar(shown) : "…"}</b>
           </div>
-          {w && shown < 0 && (
-            <div className="hint-pending">⏳ Below zero: a transfer is probably still to be recorded. Keep adding expenses as normal.</div>
-          )}
-        </div>
-      )}
-
-      {tooLong > 0 && (
-        <div className="banner warn">
-          ⚠ You have held <b>{formatSar(tooLong)}</b> cash for more than {holdDays} days ({data?.held?.oldest_days} days). Spend it on the project or return it today.
         </div>
       )}
 
@@ -215,6 +211,30 @@ export default function PhoneHome() {
         )}
       </div>
       {data?.at && !online && <p className="muted small">Last updated {new Date(data.at).toLocaleString("en-GB")}</p>}
+    </div>
+  );
+}
+
+function ChangePassword() {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState("");
+  if (!open) return <button className="btn" onClick={() => setOpen(true)}>🔑 Change password</button>;
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <input type="password" autoComplete="new-password" placeholder="New password (8 or more characters)" value={pw} onChange={(e) => setPw(e.target.value)} />
+      <button
+        className="btn"
+        disabled={pw.length < 8}
+        onClick={async () => {
+          const { error } = await supabase().auth.updateUser({ password: pw });
+          setMsg(error ? error.message : "Password changed ✓");
+          if (!error) setPw("");
+        }}
+      >
+        Save new password
+      </button>
+      {msg && <div className="small">{msg}</div>}
     </div>
   );
 }

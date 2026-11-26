@@ -7,15 +7,15 @@
 | Wallet (card or cash float) | Bank or cash journal | `wallets.odoo_journal_id` |
 | Project | Analytic account | `projects.odoo_analytic_account_id` |
 | Category | Expense GL account | `categories.odoo_account_code` |
-| Approved expense | Vendor bill (`account.move`, `in_invoice`), paid from the wallet's journal | `expenses.odoo_bill_id`, `expenses.odoo_sync` |
+| Checked expense | Vendor bill (`account.move`, `in_invoice`), paid from the wallet's journal | `expenses.odoo_bill_id`, `expenses.odoo_sync` |
 | Top-up | Internal transfer, bank to card/cash journal | `topups.odoo_move_id`, `topups.odoo_sync` |
 | Every record | Stable reference | `external_id` (`KE-…`, `KT-…`), unique and never reused |
 
-Database triggers only allow the `odoo_*` columns to change on approved, rejected, or reversed rows, so the sync can mark rows as synced without breaking the "no edits after approval" rule.
+The guard trigger treats the `odoo_*` columns as bookkeeping, so the sync can mark rows as synced even after accounts have checked them.
 
 ## Proposed flow
 
-1. A Supabase Edge Function (or a small scheduled worker) picks up `expenses` where `status = 'approved' and odoo_sync = 'not_synced'`, and `topups` where `status = 'posted'`.
+1. A Supabase Edge Function (or a small scheduled worker) picks up `expenses` where `status = 'recorded' and checked_by is not null and odoo_sync = 'not_synced'`, and `topups` where `status = 'posted'`.
 2. It calls Odoo's XML-RPC / JSON-RPC API (`/xmlrpc/2/object`, available in Community) with an integration user:
    - finds or creates the vendor `res.partner` by VAT number (falls back to the name);
    - creates the vendor bill with `ref = external_id`, the category's account, the project's analytic distribution, and 15% VAT tax when `vat_amount > 0`;
@@ -29,4 +29,4 @@ Database triggers only allow the `odoo_*` columns to change on approved, rejecte
 
 - Bill per expense, or one journal entry per day per wallet? Per-expense bills are easier to audit; journal entries keep Odoo smaller.
 - Which Odoo version, and is it reachable from the internet, or only over VPN?
-- Should Odoo's approval replace Express Cash's, or follow it? This design assumes Express Cash approves and Odoo only records.
+- Today the monthly Excel export is imported into Odoo by hand; this sync would replace that step.

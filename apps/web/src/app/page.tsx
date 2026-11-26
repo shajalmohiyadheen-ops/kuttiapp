@@ -38,7 +38,7 @@ function Dashboard() {
   const ready = summary.data !== undefined;
   const hasReturned = rows.some((r) => fromDb(r.returned) !== 0);
   const shownFlags = (flags.data ?? []).filter((f) => !walletId || f.wallet_id === walletId);
-  const flagsFor = (id: string) => shownFlags.filter((f) => f.wallet_id === id && f.kind !== "negative");
+  const flagsFor = (id: string) => shownFlags.filter((f) => f.wallet_id === id);
   const openingLabel = month ? `Start of ${monthLabel(month)}` : "Brought forward";
   const balanceLabel = month && month !== monthStart() ? `Balance end of ${monthLabel(month)}` : "Balance now";
 
@@ -93,17 +93,6 @@ function Dashboard() {
         </div>
       )}
 
-      {shownFlags.length > 0 && (
-        <>
-          <h2>Needs attention <span className="section-count">{shownFlags.length}</span></h2>
-          <ul className="flag-list">
-            {shownFlags.map((f, i) => (
-              <li key={i} className={f.kind}>{FLAG_ICON[f.kind]} {f.message}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
       <div className="tiles four">
         <Tile direction="in" label="Transferred to wallets" value={ready ? total("transferred") : undefined} />
         <Tile direction="out" label="Spent" value={ready ? total("spent") : undefined} />
@@ -132,15 +121,19 @@ function Dashboard() {
               {hasReturned && <th className="num">Returned</th>}
               <th className="num">{balanceLabel}</th>
               <th className="num">{t("cashInHand")}</th>
-              <th>Flags</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.wallet_id} className={r.active ? undefined : "muted"}>
-                <td style={{ minWidth: 150 }}>
-                  {r.name} {r.card_last4 && <span className="muted small">•••• {r.card_last4}</span>}
-                  <div className="small muted">{r.custodian_name}</div>
+                <td>
+                  <div style={{ whiteSpace: "nowrap" }}>
+                    {r.name}
+                    {flagsFor(r.wallet_id).length > 0 && (
+                      <span className="chip red" title={flagsFor(r.wallet_id).map((f) => f.message).join("\n")} style={{ marginLeft: 8 }}>⚠ {flagsFor(r.wallet_id).length}</span>
+                    )}
+                  </div>
+                  <div className="small muted" style={{ whiteSpace: "nowrap" }}>{[r.custodian_name, r.card_last4 && `•••• ${r.card_last4}`].filter(Boolean).join(" · ")}</div>
                 </td>
                 <td className="num"><Money value={r.opening} /></td>
                 <td className="num"><Money value={r.transferred} direction="in" /></td>
@@ -152,15 +145,10 @@ function Dashboard() {
                   {fromDb(r.balance) < 0 && <div className="small warn-text">Transfer pending?</div>}
                 </td>
                 <td className="num"><Money value={r.cash_in_hand} /></td>
-                <td>
-                  {groupFlags(flagsFor(r.wallet_id)).map(([f, n]) => (
-                    <span key={f.kind} className={`chip${f.kind === "cash_held" ? "" : " red"}`}>{FLAG_SHORT[f.kind](f)}{n > 1 ? ` ×${n}` : ""}</span>
-                  ))}
-                </td>
               </tr>
             ))}
             {ready && rows.length === 0 && (
-              <tr><td colSpan={9} className="muted">No wallets yet. Add one under Wallets.</td></tr>
+              <tr><td colSpan={8} className="muted">No wallets yet. Add one under Wallets.</td></tr>
             )}
           </tbody>
           {rows.length > 1 && (
@@ -174,7 +162,6 @@ function Dashboard() {
                 {hasReturned && <th className="num"><Money value={total("returned")} /></th>}
                 <th className="num"><Money value={total("balance")} /></th>
                 <th className="num"><Money value={total("cash_in_hand")} /></th>
-                <th />
               </tr>
             </tfoot>
           )}
@@ -187,23 +174,6 @@ function Dashboard() {
   );
 }
 
-const FLAG_ICON: Record<AttentionFlag["kind"], string> = { cash_held: "💵", late_entry: "⏰", bank_only: "🏦", negative: "⏳" };
-const FLAG_SHORT: Record<AttentionFlag["kind"], (f: AttentionFlag) => string> = {
-  cash_held: (f) => `Cash held ${f.days}d`,
-  late_entry: (f) => `Late entry ${f.days}d`,
-  bank_only: () => "Not in app",
-  negative: () => "Below zero",
-};
-
-/** One chip per kind of flag, worst first: [flag with the most days, count]. */
-function groupFlags(list: AttentionFlag[]): Array<[AttentionFlag, number]> {
-  const m = new Map<string, [AttentionFlag, number]>();
-  for (const f of list) {
-    const cur = m.get(f.kind);
-    m.set(f.kind, cur ? [(f.days ?? 0) > (cur[0].days ?? 0) ? f : cur[0], cur[1] + 1] : [f, 1]);
-  }
-  return [...m.values()];
-}
 
 function Tile({ label, value, direction, hero }: { label: string; value: string | undefined; direction?: "in" | "out"; hero?: boolean }) {
   return (

@@ -7,6 +7,7 @@ import { useApp } from "@/lib/app-context";
 import { supabase } from "@/lib/supabase";
 import type { MessageKey, UserRole } from "@expresscash/shared";
 import { ErrorText, Field, ThemeToggle, Wordmark } from "./ui";
+import { Bell, flagItems, useFlags } from "./bell";
 
 const NAV: Array<{ href: string; key: MessageKey; roles: UserRole[] }> = [
   { href: "/", key: "dashboard", roles: ["admin", "accounts"] },
@@ -37,6 +38,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [profile, isPhoneApp, router]);
 
   if (!ready) return null;
+  // the install guide is opened from the invite QR code, before the person has signed in
+  if (path.startsWith("/app/install")) return <>{children}</>;
   if (!session) return <Login />;
   if (!profile) return <div className="main muted">…</div>;
   if (!profile.active) {
@@ -74,14 +77,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {t("signOut")}
         </a>
       </nav>
-      <main className="main">{children}</main>
+      <main className="main">
+        <div className="topbar">
+          <AdminBell />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
 
+function AdminBell() {
+  const flags = useFlags();
+  return <Bell items={flagItems(flags)} />;
+}
+
 function Login() {
   const { t } = useApp();
-  const [email, setEmail] = useState("");
+  // the invite link carries the person's email so they only type the password
+  const [email, setEmail] = useState(() => (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("email") ?? ""));
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

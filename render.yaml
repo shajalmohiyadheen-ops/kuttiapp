@@ -10,7 +10,7 @@ services:
     branch: main
     buildCommand: npm ci && npm run build -w @expresscash/web
     startCommand: npm run start -w @expresscash/web -- -H 0.0.0.0 -p $PORT
-    healthCheckPath: /login
+    healthCheckPath: /app/install
     autoDeploy: true
     envVars:
       - key: NODE_VERSION

@@ -76,6 +76,15 @@ as $$
   select coalesce(public.current_role_name() = 'admin', false)
 $$;
 
+-- The server-side jobs (weekly email) call with the service role key, which has no user.
+create or replace function public.is_service()
+returns boolean
+language sql stable set search_path = public
+as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
+                  nullif(current_setting('request.jwt.claim.role', true), '')) is not distinct from 'service_role'
+$$;
+
 create or replace function public.sees_everything()
 returns boolean  -- admin or accounts: every wallet, entry, invoice and the audit log
 language sql stable security definer set search_path = public
@@ -1118,6 +1127,7 @@ returns table (wallet_id uuid, wallet_name text, custodian_name text, kind text,
 language sql stable security definer set search_path = public
 as $$
   with w as (select b.*, h.held_too_long, h.oldest_days from public.wallet_balances b join public.cash_held() h using (wallet_id))
+  select f.* from (
   select w.wallet_id, w.name, w.custodian_name, 'cash_held',
          format('%s holds SAR %s cash for more than %s days (oldest %s days)', coalesce(w.custodian_name, w.name),
                 to_char(w.held_too_long, 'FM999,999,990.00'), public.setting_numeric('cash_hold_days', 4)::int, w.oldest_days),
@@ -1142,6 +1152,10 @@ as $$
          format('%s is below zero (SAR %s): a transfer may still need recording', w.name, to_char(w.available_balance, 'FM999,999,990.00')),
          w.available_balance, null
     from w where w.available_balance < 0
+  ) f
+  -- finance sees every wallet; a card holder only their own warnings
+  where public.sees_everything() or public.is_service()
+     or exists (select 1 from public.wallets x where x.id = f.wallet_id and x.custodian_id = auth.uid())
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -1253,6 +1267,13 @@ begin
 
   select coalesce(array_agg(id), '{}'), coalesce(array_agg('invoices/' || invoice_path) filter (where coalesce(invoice_path, '') <> ''), '{}')
     into v_expense_ids, v_files from public.expenses where period_month = v_month;
+  -- bill photos that were replaced by a corrected one: still in storage, found through the audit log
+  v_files := v_files || coalesce((
+    select array_agg(distinct 'invoices/' || (a.old_data ->> 'invoice_path'))
+      from public.audit_log a join public.expenses e on e.id::text = a.record_id
+     where a.table_name = 'expenses' and e.period_month = v_month
+       and coalesce(a.old_data ->> 'invoice_path', '') <> ''
+       and (a.old_data ->> 'invoice_path') is distinct from e.invoice_path), '{}');
   select coalesce(array_agg(id), '{}'), v_files || coalesce(array_agg('attachments/' || attachment_path) filter (where coalesce(attachment_path, '') <> ''), '{}')
     into v_topup_ids, v_files from public.topups where period_month = v_month;
   select coalesce(array_agg(id), '{}') into v_cash_ids from public.cash_moves where period_month = v_month;

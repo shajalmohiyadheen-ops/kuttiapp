@@ -237,6 +237,16 @@ select pg_temp.eq((select amount from bank_report('10000000-0000-0000-0000-00000
 select pg_temp.eq((select amount from bank_report('10000000-0000-0000-0000-000000000002') where section = 'app_only'), -70.00::numeric(14,2), 'card expense in the app but not in the bank');
 select pg_temp.eq((select count(*) from bank_report('10000000-0000-0000-0000-000000000002') where section = 'fee'), 1::bigint, 'bank fee kept apart');
 select pg_temp.eq((select string_agg(kind, ',' order by kind) from attention_flags()), 'bank_only,cash_held,late_entry', 'dashboard flags');
+select pg_temp.as_user((select c1 from ids));
+select pg_temp.eq((select count(*) from attention_flags() where wallet_id = '10000000-0000-0000-0000-000000000002'), 0::bigint, 'staff do not see other people''s warnings');
+select pg_temp.as_user(null);
+select set_config('request.jwt.claims', '{"role":"service_role"}', false);
+select pg_temp.eq((select count(*) from attention_flags() where wallet_id = '10000000-0000-0000-0000-000000000002') > 0, true, 'the weekly email job (service role) sees every warning');
+select set_config('request.jwt.claims', '{"role":"authenticated"}', false);
+select pg_temp.eq((select count(*) from attention_flags()), 0::bigint, 'a signed-out caller sees no warnings');
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c2');
+select pg_temp.eq((select string_agg(kind, ',' order by kind) from attention_flags()), 'bank_only,cash_held,late_entry', 'a card holder sees their own warnings');
+select pg_temp.as_user((select acc from ids));
 select resolve_bank_line((select line_id from bank_report('10000000-0000-0000-0000-000000000002') where section = 'bank_only'), true, 'personal coffee, staff repaid');
 select pg_temp.eq((select count(*) from attention_flags() where kind = 'bank_only'), 0::bigint, 'a resolved line is no longer flagged');
 select pg_temp.eq((select count(*) from wallet_month_summary() where opening + transferred - spent - returned <> balance), 0::bigint,
@@ -259,12 +269,19 @@ select record_month_export((select last_month from ids), 1);
 select pg_temp.eq((select export_current from month_overview() where month = (select last_month from ids)), true, 'export is current');
 -- a change after the export makes it stale
 update expenses set description = 'late entry for last month, 2 labourers' where id = '50000000-0000-0000-0000-000000000010';
+-- a bill photo added and then replaced: both files must be removed at close
+update expenses set invoice_path = '00000000-0000-0000-0000-0000000000c1/2026/first.jpg' where id = '50000000-0000-0000-0000-000000000010';
+update expenses set invoice_path = '00000000-0000-0000-0000-0000000000c1/2026/second.jpg' where id = '50000000-0000-0000-0000-000000000010';
 select pg_temp.eq((select export_current from month_overview() where month = (select last_month from ids)), false, 'a later change makes the export stale');
 select pg_temp.expect_error($$select close_month((select last_month from ids), (select last_month_text from ids))$$, 'download the export');
 select record_month_export((select last_month from ids), 1);
 
-select pg_temp.eq((select files_pending from close_month((select last_month from ids), (select last_month_text from ids))),
-  array['attachments/00000000-0000-0000-0000-00000000000a/2026/t.pdf'], 'close returns the files to remove');
+create temp table closed_files as select files_pending from close_month((select last_month from ids), (select last_month_text from ids));
+grant select on closed_files to authenticated;
+select pg_temp.eq((select array_agg(f order by f) from closed_files, unnest(files_pending) f),
+  array['attachments/00000000-0000-0000-0000-00000000000a/2026/t.pdf',
+        'invoices/00000000-0000-0000-0000-0000000000c1/2026/first.jpg',
+        'invoices/00000000-0000-0000-0000-0000000000c1/2026/second.jpg'], 'close returns the files to remove, including replaced bills');
 select pg_temp.eq((select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'), (select available_balance from bal_before), 'balance unchanged by close');
 select pg_temp.eq((select (cash_in_hand, card_balance)::text from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000002'),
   (select (cash_in_hand, card_balance)::text from cash_before), 'cash in hand and card unchanged by close (cash carried forward)');
@@ -275,7 +292,7 @@ select pg_temp.eq((select count(*) from audit_log where record_id in ('50000000-
 select pg_temp.eq((select count(*) from audit_log where table_name = 'closed_months' and action = 'insert'), 1::bigint, 'the close itself is audited');
 select pg_temp.eq((select expense_total from closed_months), 200.00::numeric(14,2), 'closed month keeps its totals');
 select pg_temp.eq(cardinality((select files_pending from mark_files_removed((select last_month from ids),
-  array['attachments/00000000-0000-0000-0000-00000000000a/2026/t.pdf']))), 0, 'files marked removed');
+  (select files_pending from closed_files)))), 0, 'files marked removed');
 select pg_temp.expect_error($$insert into topups (wallet_id, amount, period_month) values ('10000000-0000-0000-0000-000000000001', 5, (select last_month from ids))$$, 'is closed');
 select pg_temp.expect_error($$select close_month((select last_month from ids), (select last_month_text from ids))$$, 'already closed');
 select pg_temp.eq(coalesce(nullif(current_setting('xc.closing', true), ''), 'off'), 'off', 'delete switch is off again');

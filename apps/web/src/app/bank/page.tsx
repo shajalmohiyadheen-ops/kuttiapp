@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   detectStatement,
   findHeaderRow,
@@ -20,7 +21,9 @@ import { ErrorText, Field, Money, useAction, useLoad } from "@/components/ui";
 export default function BankPage() {
   return (
     <RequireRole roles={["admin", "accounts"]}>
-      <Bank />
+      <Suspense>
+        <Bank />
+      </Suspense>
     </RequireRole>
   );
 }
@@ -44,7 +47,12 @@ interface Loaded {
 function Bank() {
   const { lookups, profile, reloadLookups } = useApp();
   const wallets = lookups.wallets;
-  const [walletId, setWalletId] = useState(wallets[0]?.id ?? "");
+  const asked = useSearchParams().get("wallet");
+  const [walletId, setWalletId] = useState(() => wallets.find((w) => w.id === asked)?.id ?? wallets[0]?.id ?? "");
+  // a notification link opens the wallet it is about, even when this page is already open
+  useEffect(() => {
+    if (asked && wallets.some((w) => w.id === asked)) setWalletId(asked);
+  }, [asked, wallets]);
   const wallet = wallets.find((w) => w.id === walletId);
   const bank = wallet?.bank_name || "Other";
   const saved = (lookups.settings.bank_mapping as Record<string, StatementMapping> | undefined)?.[bank];

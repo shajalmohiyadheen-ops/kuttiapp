@@ -1,60 +1,64 @@
 # Express Cash
 
-Petty cash and company card tracker. Finance tops up Alinma cards and cash floats; custodians record what they spend, with an invoice photo, against a project; approvers approve; the dashboard shows where every riyal went and reconciles against the bank statement.
+Petty cash and company card tracker. The Super Admin transfers money to staff cards (Alinma, SNB). Card holders record every payment, cash withdrawal and returned cash on their phone, with a photo of the bill, against a project. Accounts check the entries and match them to the weekly bank statement. Each month is downloaded for Odoo and then closed.
 
-| Part | What it is | Who uses it |
-| --- | --- | --- |
-| `apps/web` | Next.js admin web app | Finance admins and project approvers |
-| `apps/mobile` | Expo app for iOS and Android | Card and cash custodians |
-| `supabase/` | Postgres schema, security rules, workflow functions | Both apps |
-| `packages/shared` | Money maths, Saudi e-invoice QR reader, Arabic/English text, types | Both apps |
+| Part | What it is |
+| --- | --- |
+| `apps/web` | Next.js app: admin screens on a laptop, the phone app at `/app` (installable, works offline) |
+| `supabase/` | Postgres schema, security rules and functions, plus the tests |
+| `packages/shared` | Money maths, Saudi e-invoice QR reader, bank statement reader, types and text |
+| `scripts/weekly-email.mjs` | Sunday report email (GitHub Actions + Resend) |
 
-Setup and deployment: **[docs/SETUP.md](docs/SETUP.md)**. Odoo plan: [docs/ODOO-PHASE2.md](docs/ODOO-PHASE2.md).
+- **Setup:** [docs/SETUP.md](docs/SETUP.md)
+- **Guides:** [card holders](docs/guides/staff-quick-guide.md), [admin and accounts](docs/guides/admin-quick-guide.md)
+- **Odoo plan:** [docs/ODOO-PHASE2.md](docs/ODOO-PHASE2.md)
 
-## How balances work
+## How the numbers work
 
-Alinma has no public API for card balances, so Express Cash **calculates** each wallet's balance:
+There is one wallet per card holder: the card plus any cash they took out of it. Alinma and SNB have no API, so the balance is calculated:
 
 ```
-balance = posted top-ups − every expense that isn't reversed
+wallet balance = brought forward + transfers in − expenses − cash handed to the office
+on card        = brought forward card + transfers in − card expenses − cash withdrawn + cash put back
+cash in hand   = brought forward cash + cash withdrawn − cash put back − cash handed over − cash expenses
 ```
 
-- Express Cash is a record of what was spent and on what, not an enforcement tool. A card swipe has already left the bank, so an expense is deducted the moment it is submitted and stays deducted whether it is approved, rejected or waiting. Approval and rejection are for accounts and audit to classify the spend; the app takes no further action on a rejection.
-- Only a **reversal** gives money back to the balance, for example a vendor refund or an entry made twice.
-- Reconciliation is manual: on the Reconciliation page, enter the balance shown in the Alinma app or statement. Express Cash stores the calculated balance at that date next to it and flags any difference.
+- Every saved expense counts at once. There is no approval step. Accounts tick **Checked**; once checked, staff can no longer edit the entry.
+- Nothing is blocked. A wallet may go below zero when a transfer has not been recorded yet; the app shows "transfer pending".
+- Only the Super Admin records transfers, reverses entries and closes months.
+
+## Controls
+
+| Warning | When it is raised |
+| --- | --- |
+| Cash held too long | Cash withdrawn and not spent or returned after `cash_hold_days` (4). Ageing is first in, first out. |
+| Entered late | A cash withdrawal entered in the app after the bank statement's date |
+| In the bank, not in the app | A bank line with no matching entry (same amount, within 3 days for card, 10 for cash) |
+| In the app, not in the bank | A card entry the uploaded statement does not show |
+| Below zero | Wallet balance under 0 |
+
+Warnings show behind the bell on the dashboard and, for their own wallet, on the card holder's phone. They are also in the Sunday email.
 
 ## Rules the database enforces
 
-These hold for every client, including someone calling the API directly:
+These hold for any client, including direct API calls:
 
-- All amounts are SAR, `numeric(14,2)`.
-- Top-ups and expenses can't be deleted. A posted top-up or approved expense can't be edited; it is **reversed** (with a reason), which keeps the original row.
-- Expenses above the threshold in Settings (default SAR 100) need an invoice photo.
-- Custodians only see and spend from their own wallets. Approvers only see and approve expenses on projects assigned to them, and never their own. Only finance admins record top-ups, reverse, reconcile, and manage users.
-- Every change to financial and master data is written to the audit log.
-- Each expense, top-up, wallet and project has a stable `external_id` (`KE-…`, `KT-…`, `KW-…`, `KP-…`) for the Odoo sync in Phase 2.
-
-## Adding an expense on the phone
-
-The flow is built for people who don't use apps much. It has one big button and four short steps:
-
-1. **Photo of the bill.** If the bill has a Saudi e-invoice QR code, Express Cash reads the total, VAT, vendor and date from the photo, so step 3 is skipped.
-2. **"Which project?"** Hold the mic and say it ("ABB", "the Riyadh villa", "مشروع الرياض"). Express Cash matches it against the project list and shows the best match as a big button. They can also tap a recent project or type.
-3. **"How much?"** Hold the mic and say it ("two thousand three hundred", "ألفين وثلاثمية", "2300"), or type it.
-4. **Check and send.** Every value can be tapped and changed. Category, card or cash, and an optional note are on this screen too.
-
-Speech recognition uses the phone's own Apple or Google recogniser in Arabic (ar-SA) or English. It needs an installed build of the app, not Expo Go. If there's no microphone permission or no speech service, the app goes straight to typing.
-
-## Saudi e-invoice QR
-
-The mobile app's **Scan invoice QR** reads the ZATCA QR code printed on Saudi tax invoices and fills in vendor name, vendor VAT number, date, total, and VAT exactly. No OCR service or API key is needed. Invoices without a QR code are typed in by hand.
+- **Amounts:** all amounts are SAR, `numeric(14,2)`.
+- **No deletes:** nothing financial can be deleted. Corrections are reversals, which keep the original row and need a reason.
+- **Staff access:** staff only see and enter on their own wallet. They can correct an expense until it is checked. Cash entries can't be edited.
+- **Bill photos:** a photo is required above the limit in Settings (SAR 100) for categories that need one. No-bill categories need remarks.
+- **Month close:** a month can be closed only after its download is current. It erases the month's rows and files, including replaced bill photos, and carries every balance forward unchanged.
+- **Audit:** every change to money and master data is in the audit log.
+- **Odoo IDs:** every record has a stable `external_id` (`KE-`, `KT-`, `KC-`, `KW-`, `KP-`) for the Odoo sync later.
 
 ## Development
 
 ```bash
 npm install
-npm test            # shared package unit tests
-npm run test:db     # schema tests on a local Postgres (needs psql + createdb)
-npm run dev:web     # http://localhost:3000  (needs apps/web/.env.local)
-npm run dev:mobile  # Expo dev server        (needs apps/mobile/.env)
+npm test                         # shared unit tests
+npm run test:db                  # schema tests on a local Postgres 16
+npm run dev:web                  # http://localhost:3000 (needs apps/web/.env.local)
+npm run weekly-email -- --dry-run
 ```
+
+GitHub Actions runs the database tests, the unit tests, the web build and lint on every pull request.
