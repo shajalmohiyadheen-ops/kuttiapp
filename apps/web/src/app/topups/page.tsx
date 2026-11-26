@@ -99,7 +99,7 @@ function Topups() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => setOpen(r)}>
-                <td>{r.transfer_date}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{r.transfer_date}</td>
                 <td className="small muted">{r.external_id}</td>
                 <td>{name("wallets", r.wallet_id)}</td>
                 <td>{t(r.method === "cash" ? "cash" : r.method)}</td>

@@ -369,7 +369,9 @@ begin
     end if;
   end if;
 
-  if new.status in ('pending', 'approved') then
+  -- Submission checks apply when an expense is created or (re)submitted, not to
+  -- later bookkeeping updates (e.g. Odoo sync flags on an approved row).
+  if new.status = 'pending' then
     select * into v_wallet from public.wallets where id = new.wallet_id;
     if not v_wallet.active then
       raise exception 'wallet % is inactive', v_wallet.name;

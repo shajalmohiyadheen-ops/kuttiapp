@@ -123,7 +123,9 @@ select pg_temp.expect_error($$update expenses set status = 'pending' where id = 
 select pg_temp.expect_error($$delete from expenses where id = '50000000-0000-0000-0000-000000000001'$$, 'cannot be deleted');
 select pg_temp.expect_error($$delete from topups where id = '40000000-0000-0000-0000-000000000001'$$, 'cannot be deleted');
 select pg_temp.expect_error($$update expenses set description = 'x' where id = '50000000-0000-0000-0000-000000000002'$$, 'read only');
-update expenses set odoo_sync = 'queued' where id = '50000000-0000-0000-0000-000000000001';  -- Phase 2 sync columns stay writable
+update wallets set active = false where id = '10000000-0000-0000-0000-000000000001';
+update expenses set odoo_sync = 'queued' where id = '50000000-0000-0000-0000-000000000001';  -- Phase 2 sync columns stay writable, even if the wallet was closed since
+update wallets set active = true where id = '10000000-0000-0000-0000-000000000001';
 set role authenticated;
 select pg_temp.expect_error($$update topups set amount = 1 where id = '40000000-0000-0000-0000-000000000001'$$, 'cannot be edited');
 select pg_temp.expect_error($$select reverse_expense('50000000-0000-0000-0000-000000000003', 'x')$$, 'only approved');

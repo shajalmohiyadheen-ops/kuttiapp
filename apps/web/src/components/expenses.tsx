@@ -28,7 +28,7 @@ export function ExpenseTable({ rows, onOpen }: { rows: Expense[]; onOpen: (e: Ex
         <tbody>
           {rows.map((e) => (
             <tr key={e.id} className="clickable" onClick={() => onOpen(e)}>
-              <td>{e.expense_date}</td>
+              <td style={{ whiteSpace: "nowrap" }}>{e.expense_date}</td>
               <td className="small muted">{e.external_id}</td>
               <td>{name("profiles", e.submitted_by)}</td>
               <td>{name("wallets", e.wallet_id)}</td>

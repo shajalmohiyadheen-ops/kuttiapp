@@ -1,0 +1,80 @@
+# Setup and deployment
+
+About an hour end to end. You need: a Supabase account, a Vercel account (or any Node host) for the web app, and an Expo account for the mobile builds. An Apple Developer account (USD 99/year) is needed only for iPhone installs.
+
+## 1. Supabase (database, login, invoice storage)
+
+1. Create a project at [supabase.com](https://supabase.com). Pick the region closest to Saudi Arabia (currently Frankfurt or Mumbai; there's no KSA region).
+2. Apply the schema. Either:
+   - **SQL editor:** open `supabase/migrations/20261126000001_init.sql`, paste the whole file into Supabase > SQL Editor, and run it; or
+   - **CLI:** `npx supabase link --project-ref <ref>` then `npx supabase db push`.
+3. Supabase > Authentication > Sign In / Providers: keep **Email** on and turn **off** "Allow new users to sign up". Finance adds users from the web app instead.
+4. Supabase > Project Settings > API: copy the **Project URL**, the **anon / publishable key**, and the **service_role / secret key**. Keep the service key private.
+
+The very first account created becomes the finance admin automatically. Create it in Supabase > Authentication > Users > Add user (tick "Auto confirm"). Everyone else is added from the web app's Users page.
+
+### Demo data (optional, test projects only)
+
+```bash
+SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed
+```
+
+This creates four demo users (password `KuttiDemo#2026`), three wallets, projects, categories, top-ups, and expenses in every status. Demo rows can't be deleted afterwards, because the schema forbids deletes, so use a separate Supabase project for demos.
+
+## 2. Web app
+
+Local:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local   # fill in the three values
+npm install
+npm run dev:web
+```
+
+Deploy on Vercel:
+
+1. Import the GitHub repo and set **Root Directory** to `apps/web`.
+2. Add the environment variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
+3. Deploy. The `NEXT_PUBLIC_*` values are built into the pages, so redeploy after changing them.
+
+Any Node 22 host works the same way: `npm ci && npm run build -w @kuttiapp/web && npm run start -w @kuttiapp/web`.
+
+## 3. Mobile app
+
+```bash
+cp apps/mobile/.env.example apps/mobile/.env   # URL + anon key only, never the service key
+npm run dev:mobile
+```
+
+Scan the QR code with **Expo Go** to try it on a phone.
+
+### Installable builds
+
+```bash
+cd apps/mobile
+npx eas-cli@latest login
+npx eas-cli@latest init                # links the app to your Expo account
+npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_URL --value https://YOUR-PROJECT.supabase.co --environment preview --environment production
+npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value YOUR-ANON-KEY --environment preview --environment production
+```
+
+- **Android APK** (install directly, no Play Store): `npx eas-cli@latest build -p android --profile preview`. EAS gives you a download link; send it to custodians.
+- **iPhone via TestFlight**: `npx eas-cli@latest build -p ios --profile production`, then `npx eas-cli@latest submit -p ios`. Testers install it from TestFlight. This needs the Apple Developer account.
+- Change `ios.bundleIdentifier` and `android.package` in `apps/mobile/app.json` (currently `com.kuttiapp.pettycash`) to your company's domain **before** the first store build. They can't be changed after publishing.
+
+## 4. First-day checklist
+
+1. Sign in to the web app as the finance admin.
+2. **Settings**: set the invoice photo threshold.
+3. **Users**: add each custodian and approver. Give them the temporary password.
+4. **Projects** and **Categories**: add yours. Assign an approver to a project, or leave it empty so finance approves.
+5. **Wallets**: one per Alinma card (with last 4 digits) and one per cash float.
+6. **Top-ups**: enter each wallet's current balance with method "Opening balance", then record every transfer from then on.
+7. Custodians install the app, sign in, and start submitting.
+8. Weekly: **Reconciliation** with each card's balance from the Alinma app.
+
+## Tests
+
+- `npm run test:db` applies the migration to a throwaway local Postgres (with a small stand-in for Supabase's `auth` and `storage` schemas) and runs 30+ checks on balances, permissions, the approval workflow, reversals, and the audit log.
+- `npm test` runs the shared unit tests (money parsing and formatting, ZATCA QR decoding).
+- GitHub Actions runs both plus the web build, web lint, and mobile typecheck on every pull request.

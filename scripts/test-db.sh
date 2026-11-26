@@ -6,6 +6,6 @@ cd "$(dirname "$0")/.."
 DB="kuttiapp_test_$$"
 createdb "$DB"
 trap 'dropdb --if-exists "$DB"' EXIT
-psql -q -v ON_ERROR_STOP=1 -d "$DB" -f supabase/tests/supabase_stub.sql
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -c "create extension if not exists pgcrypto" -f supabase/tests/supabase_stub.sql
 for f in supabase/migrations/*.sql; do psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$f"; done
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f supabase/tests/schema_test.sql
