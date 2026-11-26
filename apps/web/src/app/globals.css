@@ -528,3 +528,6 @@ th { font-family: var(--font); }
 .bars .bar.dim { opacity: .5; }
 .bars .bar.current { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--grad-b) 60%, transparent)); }
 .bars .tick.current { fill: var(--text); font-weight: 600; }
+/* every selected choice and gradient fill uses the logo gradient */
+:root, :root[data-theme="light"] { --brand-grad: var(--grad); --blue: var(--grad-a); }
+.phone .choice.on { box-shadow: 0 6px 18px var(--glow); }
