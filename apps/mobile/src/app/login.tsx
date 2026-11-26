@@ -19,7 +19,7 @@ export default function Login() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "center", padding: 24 }}>
           <View style={{ gap: 18 }}>
             <View style={{ alignItems: "center", marginBottom: 12 }}>
-              <Logo height={56} />
+              <Logo height={80} />
             </View>
             <Field label={t("email")} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" textContentType="username" />
             <Field label={t("password")} value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" textContentType="password" />

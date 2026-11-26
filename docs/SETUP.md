@@ -64,12 +64,11 @@ npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value YOUR-
 
 ## Your logo
 
-Replace these two files with your logo, keeping roughly a 4:1 wide shape on a transparent background:
+The logo assets are generated from `design/kuttiapp-logo-original.png` by `design/make-logo-assets.py` (needs Pillow). To use a new logo, replace that image, adjust the crop box in the script if needed, and run `python3 design/make-logo-assets.py`. It writes:
 
-- `apps/web/public/logo.svg` (web: sidebar, login page, browser tab). An SVG is best; a PNG works too, but then update the `src="/logo.svg"` references in `apps/web/src/components/shell.tsx`.
-- `apps/mobile/assets/logo.png` (mobile: home and login screens), about 1200 × 300 px.
-
-For the phone's app icon, replace `apps/mobile/assets/icon.png` (1024 × 1024) and the `android-icon-*.png` files.
+- `apps/web/public/logo.png` and `apps/mobile/assets/logo.png`: the transparent wordmark used in headers and on the login page.
+- `apps/web/public/icon.png`: browser tab icon.
+- `apps/mobile/assets/icon.png`, `splash.png` and the `android-icon-*.png` files: the phone's app icon and splash screen.
 
 ## 4. First-day checklist
 

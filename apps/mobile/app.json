@@ -17,7 +17,7 @@
     "android": {
       "package": "com.kuttiapp.pettycash",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0a0b24",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -49,6 +49,15 @@
         {
           "microphonePermission": "KuttiApp uses the microphone so you can say the project and amount instead of typing.",
           "speechRecognitionPermission": "KuttiApp turns what you say into the project name and amount."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 300,
+          "resizeMode": "contain",
+          "backgroundColor": "#07071f"
         }
       ]
     ]

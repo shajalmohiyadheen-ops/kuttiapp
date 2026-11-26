@@ -51,7 +51,7 @@ export default function Home() {
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={c.text} />}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Logo height={34} />
+          <Logo height={42} />
           <Pressable accessibilityLabel={t("settings")} onPress={() => router.push("/settings")} hitSlop={12}>
             <T size={26}>⚙️</T>
           </Pressable>

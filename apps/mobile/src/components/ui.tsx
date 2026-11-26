@@ -18,9 +18,14 @@ export function Background({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The KuttiApp logo. Replace apps/mobile/assets/logo.png with the real one (about 4:1). */
+/** The logo's coral -> pink -> violet gradient. */
+export function brandGradient(c: ReturnType<typeof useColors>): [string, string, string] {
+  return [c.brand2, c.brandMid, c.brand];
+}
+
+/** The KuttiApp wordmark (built from design/kuttiapp-logo-original.png by design/make-logo-assets.py). */
 export function Logo({ height = 36 }: { height?: number }) {
-  return <Image source={require("../../assets/logo.png")} style={{ height, width: height * 4 }} resizeMode="contain" accessibilityLabel="KuttiApp" />;
+  return <Image source={require("../../assets/logo.png")} style={{ height, width: height * (981 / 290) }} resizeMode="contain" accessibilityLabel="KuttiApp" />;
 }
 
 export function T({ children, muted, size = 16, bold, color, style, center }: { children: React.ReactNode; muted?: boolean; size?: number; bold?: boolean; color?: string; style?: object; center?: boolean }) {
@@ -97,7 +102,7 @@ export function Button({
   return (
     <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled || busy} style={({ pressed }) => [{ opacity: disabled ? 0.45 : pressed ? 0.85 : 1 }, style]}>
       {kind === "primary" ? (
-        <LinearGradient colors={[c.brand2, c.brand]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={shape}>
+        <LinearGradient colors={brandGradient(c)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={shape}>
           {inner}
         </LinearGradient>
       ) : (
@@ -174,7 +179,7 @@ export function MicButton({ listening, onPressIn, onPressOut, label }: { listeni
         style={({ pressed }) => ({ transform: [{ scale: pressed || listening ? 1.08 : 1 }] })}
       >
         <LinearGradient
-          colors={listening ? [c.moneyOut, c.brand] : [c.brand2, c.brand]}
+          colors={listening ? [c.brandMid, c.brand] : brandGradient(c)}
           style={{ width: 132, height: 132, borderRadius: 66, alignItems: "center", justifyContent: "center", borderWidth: listening ? 6 : 0, borderColor: c.cardAlt }}
         >
           <Text style={{ fontSize: 54 }}>🎤</Text>

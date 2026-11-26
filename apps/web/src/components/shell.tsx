@@ -44,7 +44,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav className="nav">
         <div className="brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="KuttiApp" />
+          <img src="/logo.png" alt="KuttiApp" />
         </div>
         {items.map((n) => (
           <Link key={n.href} href={n.href} className={(n.href === "/" ? path === "/" : path.startsWith(n.href)) ? "active" : undefined}>
@@ -89,7 +89,7 @@ function Login() {
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="logo" src="/logo.svg" alt="KuttiApp" />
+      <img className="logo" src="/logo.png" alt="KuttiApp" />
       <div style={{ display: "grid", gap: 12 }}>
         <Field label={t("email")}>
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />

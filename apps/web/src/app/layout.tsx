@@ -6,7 +6,7 @@ import { Shell } from "@/components/shell";
 export const metadata: Metadata = {
   title: "KuttiApp",
   description: "Petty cash and company card tracker",
-  icons: { icon: "/logo.svg" },
+  icons: { icon: "/icon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
