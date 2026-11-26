@@ -1,59 +1,35 @@
-"""Builds the app's logo assets from design/kuttiapp-logo-original.png.
+"""Builds the web app's logo assets from design/express-cash-logo-original.png.
 
-- Wordmark with a transparent background (header logo on web and mobile)
-- App icon and splash image (the full square artwork)
+- badge.webp: the full round badge with a transparent outside (login, phone home)
+- badge-sm.webp: small badge for the header, next to the text wordmark
+- icon.png, icon-192.png, apple-touch-icon.png, favicon.ico: app and browser icons
 
 Run: python3 design/make-logo-assets.py   (needs Pillow)
 """
-from PIL import Image
+from PIL import Image, ImageDraw
 
-SRC = "design/kuttiapp-logo-original.png"
-BG = (6, 6, 32)  # the navy behind the wordmark
+SRC = "design/express-cash-logo-original.png"
+OUT = "apps/web/public"
 
+src = Image.open(SRC).convert("RGBA")
+size = src.width
+# Round mask just outside the glowing ring, smoothed by drawing large then shrinking.
+scale = 4
+mask = Image.new("L", (size * scale, size * scale), 0)
+r = 0.497 * size * scale
+c = size * scale / 2
+ImageDraw.Draw(mask).ellipse((c - r, c - r, c + r, c + r), fill=255)
+mask = mask.resize((size, size), Image.LANCZOS)
+badge = src.copy()
+badge.putalpha(mask)
 
-def color_to_alpha(img):
-    """Turns the navy background transparent, keeping the gradient colours and soft glow."""
-    out = Image.new("RGBA", img.size)
-    p, o = img.load(), out.load()
-    for y in range(img.height):
-        for x in range(img.width):
-            c = p[x, y]
-            a = max(max(0, c[i] - BG[i]) / (255 - BG[i]) for i in range(3))
-            a = min(1, max(0, (a - 0.16) / 0.84))
-            if a <= 0.01:
-                o[x, y] = (0, 0, 0, 0)
-                continue
-            col = tuple(int(min(255, max(0, BG[i] + (c[i] - BG[i]) / a))) for i in range(3))
-            o[x, y] = col + (int(a * 255),)
-    return out
+badge.resize((640, 640), Image.LANCZOS).save(f"{OUT}/badge.webp", quality=85)
+badge.resize((128, 128), Image.LANCZOS).save(f"{OUT}/badge-sm.webp", quality=90)
 
-
-src = Image.open(SRC).convert("RGB")
-word = color_to_alpha(src.crop((80, 415, 1070, 700)))
-word = word.crop(word.getbbox())
-pad = 10
-logo = Image.new("RGBA", (word.width + 2 * pad, word.height + 2 * pad), (0, 0, 0, 0))
-logo.paste(word, (pad, pad))
-logo.save("apps/mobile/assets/logo.png")
-logo.save("apps/web/public/logo.png")
-
-src.resize((1024, 1024), Image.LANCZOS).save("apps/mobile/assets/icon.png")
-src.save("apps/mobile/assets/splash.png")
-
-# Square icon for the browser tab and Android adaptive icon: wordmark centred on navy.
-for size, path in [(512, "apps/web/public/icon.png"), (1024, "apps/mobile/assets/android-icon-foreground.png")]:
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    w = int(size * 0.62)  # stays inside Android's safe zone
-    h = int(logo.height * w / logo.width)
-    canvas.alpha_composite(logo.resize((w, h), Image.LANCZOS), ((size - w) // 2, (size - h) // 2))
-    if path.endswith("icon.png") and "web" in path:
-        bg = Image.new("RGBA", (size, size), (10, 11, 36, 255))
-        bg.alpha_composite(canvas)
-        canvas = bg
-    canvas.save(path)
-Image.new("RGBA", (1024, 1024), (10, 11, 36, 255)).save("apps/mobile/assets/android-icon-background.png")
-mono = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
-fg = Image.open("apps/mobile/assets/android-icon-foreground.png")
-mono.paste(Image.new("RGBA", fg.size, (255, 255, 255, 255)), (0, 0), fg.split()[3])
-mono.save("apps/mobile/assets/android-icon-monochrome.png")
-print("logo", logo.size)
+# Icons: the full square artwork (its corners are already deep navy).
+square = src.convert("RGB")
+square.resize((512, 512), Image.LANCZOS).save(f"{OUT}/icon.png", optimize=True)
+square.resize((192, 192), Image.LANCZOS).save(f"{OUT}/icon-192.png", optimize=True)
+square.resize((180, 180), Image.LANCZOS).save(f"{OUT}/apple-touch-icon.png", optimize=True)
+badge.resize((64, 64), Image.LANCZOS).save("apps/web/src/app/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+print("done")

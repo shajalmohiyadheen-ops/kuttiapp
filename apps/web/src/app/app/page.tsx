@@ -7,7 +7,7 @@ import type { Expense, Topup, WalletBalance } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { listDrafts, syncDrafts, type Draft } from "@/lib/drafts";
-import { Money, ThemeToggle, useLive } from "@/components/ui";
+import { Money, ThemeToggle, Wordmark, useLive } from "@/components/ui";
 
 interface HomeData {
   wallet: WalletBalance | null;
@@ -90,8 +90,7 @@ export default function PhoneHome() {
   return (
     <div className="phone">
       <header>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="KuttiApp" />
+        <Wordmark />
         <button className="linkbtn" aria-label="Menu" onClick={() => setMenu(!menu)} style={{ fontSize: 26 }}>☰</button>
       </header>
 

@@ -10,7 +10,7 @@ export interface Sheet {
 export async function buildWorkbook(sheets: Sheet[]): Promise<ArrayBuffer> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = "KuttiApp";
+  wb.creator = "Express Cash";
   wb.created = new Date();
   for (const s of sheets) {
     const ws = wb.addWorksheet(s.name.slice(0, 31));

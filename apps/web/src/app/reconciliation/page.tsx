@@ -48,7 +48,7 @@ function Reconciliation() {
     <>
       <h1>{t("reconciliation")}</h1>
       <div className="notice">
-        Optional. KuttiApp calculates each wallet: brought forward + transfers in − every saved expense (card and cash). When you get a card statement,
+        Optional. Express Cash calculates each wallet: brought forward + transfers in − every saved expense (card and cash). When you get a card statement,
         you can note its balance here. The wallet includes cash the holder has withdrawn but not spent yet, so a difference is normal while cash is in hand;
         anything beyond that is a missing or mistyped entry.
       </div>

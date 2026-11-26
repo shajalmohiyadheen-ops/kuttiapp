@@ -150,3 +150,16 @@ export function monthStart(): string {
 export function fmtDateTime(s: string | null | undefined): string {
   return s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "—";
 }
+
+/** App name shown in headers: small round badge plus the "Express Cash!" text. */
+export function Wordmark() {
+  return (
+    <div className="wordmark">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/badge-sm.webp" alt="" />
+      <span>
+        Express <b>Cash!</b>
+      </span>
+    </div>
+  );
+}
