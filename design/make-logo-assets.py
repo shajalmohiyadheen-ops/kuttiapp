@@ -1,10 +1,10 @@
-"""Builds the web app's logo and icons from design/express-cash-xc-icon.png (the "XC" mark).
+"""Builds the web app's logo and icons from design/express-cash-xc-logo-v2.png (top half: the XC app icon).
 
-The source has its own glowing rounded frame on black. Phones draw their own rounded mask,
-so the icon is cropped to the inside of that frame and the leftover edge glow is blended
-into the navy, which avoids a double frame on the home screen.
+The source draws its own rounded frame on a black margin. Phones round the icon themselves,
+so only the inside is used: the XC, the train and "Powered By SHAJAL SPEAKS" are cut out and
+placed full-bleed on the frame's own charcoal, with feathered edges so no seam shows.
 
-- xc.png / xc-sm.png: the same mark for the sign-in screen and headers
+- xc.png / xc-sm.png: the mark for the sign-in screen and headers
 - icon.png, icon-192.png, apple-touch-icon.png, favicon.ico: app and browser icons
 
 Run: python3 design/make-logo-assets.py   (needs Pillow and numpy)
@@ -12,39 +12,39 @@ Run: python3 design/make-logo-assets.py   (needs Pillow and numpy)
 import numpy as np
 from PIL import Image
 
-SRC = "design/express-cash-xc-icon.png"
+SRC = "design/express-cash-xc-logo-v2.png"
 OUT = "apps/web/public"
-CONTENT = (118, 330, 1135, 885)  # the XC, the train and "BY SHAJAL SPEAKS", inside the drawn frame
-SIDE = 1180  # canvas size; the content sits centred with breathing room for the phone's mask
+CONTENT = (205, 240, 1048, 712)  # inside the drawn frame: XC, train, "Powered By SHAJAL SPEAKS"
+BG = (15, 15, 20)                # the frame's interior charcoal
+SIDE = 1180
+WIDTH = 950                      # content width on the canvas (about 80%, inside the phone's mask)
 
 src = Image.open(SRC).convert("RGB")
-piece = np.asarray(src.crop(CONTENT)).astype(np.float32)
+piece_img = src.crop(CONTENT)
+scale = WIDTH / piece_img.width
+piece_img = piece_img.resize((WIDTH, round(piece_img.height * scale)), Image.LANCZOS)
+piece = np.asarray(piece_img).astype(np.float32)
 h, w = piece.shape[:2]
-# Fresh navy background (the source's interior colours) so none of the frame glow comes along.
-yy, xx = np.mgrid[0:SIDE, 0:SIDE].astype(np.float32) / (SIDE - 1)
-# Match the background to the colour along the piece's top and bottom edges so no seam shows.
-top = piece[:6].reshape(-1, 3).mean(0)
-bottom = piece[-6:].reshape(-1, 3).mean(0)
-x0, y0 = (SIDE - w) // 2 + 8, (SIDE - h) // 2
-rel = np.clip((yy * (SIDE - 1) - y0) / (h - 1), -0.6, 1.6)
-canvas = top + (bottom - top) * rel[..., None]
-canvas = np.clip(canvas, 0, 255)
-x0, y0 = (SIDE - w) // 2 + 8, (SIDE - h) // 2
-# Feather the pasted piece's edges into the background.
-fe = 90
+canvas = np.empty((SIDE, SIDE, 3), np.float32)
+canvas[:] = BG
+x0, y0 = (SIDE - w) // 2, (SIDE - h) // 2
+fe = 40
 ey = np.minimum(np.arange(h), np.arange(h)[::-1])[:, None]
 ex = np.minimum(np.arange(w), np.arange(w)[::-1])[None, :]
-alpha = (np.clip(np.minimum(ey, ex) / fe, 0, 1) ** 1.2)[..., None]
+alpha = np.clip(np.minimum(ey, ex) / fe, 0, 1)[..., None]
 region = canvas[y0:y0 + h, x0:x0 + w]
 canvas[y0:y0 + h, x0:x0 + w] = piece * alpha + region * (1 - alpha)
 icon = Image.fromarray(canvas.astype(np.uint8), "RGB")
-n = SIDE
 
 icon.resize((512, 512), Image.LANCZOS).save(f"{OUT}/icon.png", optimize=True)
 icon.resize((192, 192), Image.LANCZOS).save(f"{OUT}/icon-192.png", optimize=True)
 icon.resize((180, 180), Image.LANCZOS).save(f"{OUT}/apple-touch-icon.png", optimize=True)
 icon.resize((320, 320), Image.LANCZOS).save(f"{OUT}/xc.png", optimize=True)
-# Header mark and favicon: the same icon, smaller.
-icon.resize((96, 96), Image.LANCZOS).save(f"{OUT}/xc-sm.png", optimize=True)
+# Header mark: XC and train only, so it stays legible at 40 px.
+head = src.crop((205, 235, 1048, 640))
+side = head.width + 80
+sq = Image.new("RGB", (side, side), BG)
+sq.paste(head, (40, (side - head.height) // 2))
+sq.resize((96, 96), Image.LANCZOS).save(f"{OUT}/xc-sm.png", optimize=True)
 icon.resize((64, 64), Image.LANCZOS).convert("RGBA").save("apps/web/src/app/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
 print("ok", icon.size)

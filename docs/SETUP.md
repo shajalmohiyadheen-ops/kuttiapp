@@ -148,4 +148,4 @@ npm run weekly-email -- --dry-run   # writes the report to files instead of send
 
 Demo data, for a separate test project only, because rows can't be deleted afterwards: `SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed`.
 
-Logo assets are generated from `design/express-cash-xc-icon.png` by `python3 design/make-logo-assets.py` (needs Pillow).
+Logo assets are generated from `design/express-cash-xc-logo-v2.png` by `python3 design/make-logo-assets.py` (needs Pillow and numpy).

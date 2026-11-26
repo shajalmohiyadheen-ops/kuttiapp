@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fromDb, monthLabel, type AttentionFlag, type Expense, type StorageUsage, type Topup, type WalletBalance, type WalletMonthSummary } from "@expresscash/shared";
+import { formatSar, fromDb, monthLabel, type AttentionFlag, type Expense, type StorageUsage, type Topup, type WalletBalance, type WalletMonthSummary } from "@expresscash/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/export";
@@ -30,6 +30,8 @@ function Dashboard() {
   const action = useAction();
 
   const summary = useLoad(async () => must(await supabase().rpc("wallet_month_summary", { p_month: month || null })) as WalletMonthSummary[], [month]);
+  const prevMonth = month ? shiftMonth(month, -1) : "";
+  const prev = useLoad(async () => (prevMonth ? (must(await supabase().rpc("wallet_month_summary", { p_month: prevMonth })) as WalletMonthSummary[]) : []), [prevMonth]);
   const flags = useLoad(async () => must(await supabase().rpc("attention_flags")) as AttentionFlag[], []);
   const storage = useLoad(async () => must(await supabase().rpc("storage_usage")) as StorageUsage | null, []);
   const spend = useLoad(async () => {
@@ -42,6 +44,10 @@ function Dashboard() {
   const rows = (summary.data ?? []).filter((r) => !walletId || r.wallet_id === walletId);
   const total = (k: keyof WalletMonthSummary) => (rows.reduce((a, r) => a + fromDb(r[k] as string), 0) / 100).toFixed(2);
   const ready = summary.data !== undefined;
+  const prevRows = (prev.data ?? []).filter((r) => !walletId || r.wallet_id === walletId);
+  const prevTotal = (k: keyof WalletMonthSummary) => (prevRows.length ? prevRows.reduce((a, r) => a + fromDb(r[k] as string), 0) / 100 : null);
+  const vsLabel = prevMonth ? monthLabel(prevMonth).split(" ")[0] : "";
+  const trend = (k: keyof WalletMonthSummary, upIsGood: boolean) => (ready && prevMonth ? { now: Number(total(k)), before: prevTotal(k), vs: vsLabel, upIsGood } : undefined);
   const hasReturned = rows.some((r) => fromDb(r.returned) !== 0);
   const shownFlags = (flags.data ?? []).filter((f) => !walletId || f.wallet_id === walletId);
   const flagsFor = (id: string) => shownFlags.filter((f) => f.wallet_id === id);
@@ -112,10 +118,10 @@ function Dashboard() {
       </div>
 
       <div className="tiles four">
-        <Tile direction="in" label="Transferred to wallets" value={ready ? total("transferred") : undefined} />
-        <Tile direction="out" label="Spent" value={ready ? total("spent") : undefined} />
-        <Tile label="VAT in spend" value={ready ? total("vat") : undefined} />
-        <Tile hero label={balanceLabel} value={ready ? total("balance") : undefined} />
+        <Tile direction="in" label="Transferred to wallets" value={ready ? total("transferred") : undefined} trend={trend("transferred", true)} />
+        <Tile direction="out" label="Spent" value={ready ? total("spent") : undefined} trend={trend("spent", false)} />
+        <Tile label="VAT in spend" value={ready ? total("vat") : undefined} trend={trend("vat", false)} />
+        <Tile hero label={balanceLabel} value={ready ? total("balance") : undefined} trend={trend("balance", true)} />
       </div>
       {ready && (
         <p className="tally">
@@ -193,13 +199,43 @@ function Dashboard() {
 }
 
 
-function Tile({ label, value, direction, hero }: { label: string; value: string | undefined; direction?: "in" | "out"; hero?: boolean }) {
+type Trend = { now: number; before: number | null; vs: string; upIsGood: boolean };
+
+/** KPI tile: big gradient figure, the label under it, and a small change line against last month. */
+function Tile({ label, value, direction, hero, trend }: { label: string; value: string | undefined; direction?: "in" | "out"; hero?: boolean; trend?: Trend }) {
+  const cents = value === undefined ? 0 : Math.round(Number(value) * 100);
+  const sign = direction === "in" && cents !== 0 ? "+" : direction === "out" && cents !== 0 ? "−" : "";
   return (
-    <div className={`tile${direction ? ` ${direction}` : ""}${hero ? " hero" : ""}`}>
+    <div className={`tile kpi${direction ? ` ${direction}` : ""}${hero ? " hero" : ""}`}>
+      <div className="value">
+        {value === undefined ? "…" : (
+          <>
+            {sign && <span className={`sign ${direction}`}>{sign}</span>}
+            <span className={!direction && cents < 0 ? "money-out" : "grad-text"}>{formatSar(direction ? Math.abs(cents) : cents, { halalas: true })}</span>
+          </>
+        )}
+      </div>
       <div className="label">{label}</div>
-      <div className="value">{value === undefined ? "…" : <Money value={value} direction={direction} />}</div>
+      <TrendLine trend={trend} />
     </div>
   );
+}
+
+function TrendLine({ trend }: { trend?: Trend }) {
+  if (!trend) return null;
+  if (trend.before === null) return <div className="trend">No figures for {trend.vs}</div>;
+  const diff = trend.now - trend.before;
+  if (Math.abs(diff) < 0.005) return <div className="trend">Same as {trend.vs}</div>;
+  const pct = trend.before !== 0 ? `${Math.abs((diff / Math.abs(trend.before)) * 100).toFixed(1)}%` : formatSar(Math.round(Math.abs(diff) * 100), { halalas: true });
+  const good = diff > 0 === trend.upIsGood;
+  return <div className={`trend ${good ? "good" : "bad"}`}>{diff > 0 ? "▲" : "▼"} {pct} {diff > 0 ? "more" : "less"} than {trend.vs}</div>;
+}
+
+/** First day of the month `by` months away from `month` (YYYY-MM-01). */
+function shiftMonth(month: string, by: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + by, 1));
+  return d.toISOString().slice(0, 8) + "01";
 }
 
 /** Spending in week buckets of the month: 1–7, 8–14, 15–21, 22–28, 29–end. */

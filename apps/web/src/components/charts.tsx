@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { formatSar } from "@expresscash/shared";
 
 const money = (cents: number) => formatSar(cents, { halalas: true });
 const short = (cents: number) => (cents >= 100000_00 ? `SAR ${+(cents / 100000).toFixed(1)}k` : money(cents));
 
 /** Fixed slot order for categories (validated for colour-blind separation in both themes). Never cycled: extras fold into "Other". */
-const SLOTS = 7;
+const SLOTS = 6;
 export const sliceColor = (i: number) => (i < SLOTS ? `var(--series-${i + 1})` : "var(--series-other)");
 
 export interface Slice { label: string; cents: number }
@@ -22,6 +22,7 @@ export function Donut({ data, title }: { data: Slice[]; title: string }) {
   const offsets = slices.map((_, i) => slices.slice(0, i).reduce((a, d) => a + (d.cents / total) * C, 0));
   const shown = hover === null ? null : slices[hover];
   const colorOf = (i: number) => (slices[i].label === "Other" ? "var(--series-other)" : sliceColor(i));
+  const uid = useId().replace(/:/g, "");
   return (
     <div className="chart-card">
       <div className="chart-head"><h3>{title}</h3></div>
@@ -30,19 +31,29 @@ export function Donut({ data, title }: { data: Slice[]; title: string }) {
       ) : (
         <div className="donut-wrap">
           <svg viewBox="0 0 200 200" className="donut" role="img" aria-label={`${title}: total ${money(total)}`}>
+            <defs>
+              {slices.map((d, i) => (
+                <linearGradient key={d.label} id={`${uid}-s${i}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" style={{ stopColor: `color-mix(in srgb, ${colorOf(i)} 62%, white)` }} />
+                  <stop offset="1" style={{ stopColor: colorOf(i) }} />
+                </linearGradient>
+              ))}
+            </defs>
             <circle cx="100" cy="100" r={R} fill="none" stroke="var(--track)" strokeWidth={W} />
+            <g className="donut-g">
             {slices.map((d, i) => {
               const len = (d.cents / total) * C;
               const gap = slices.length > 1 ? Math.min(2.5, len / 3) : 0;
               return (
-                <circle key={d.label} cx="100" cy="100" r={R} fill="none" stroke={colorOf(i)} strokeWidth={hover === i ? W + 6 : W}
+                <circle key={d.label} className={hover === i ? "slice on" : "slice"} cx="100" cy="100" r={R} fill="none" stroke={`url(#${uid}-s${i})`} strokeWidth={hover === i ? W + 6 : W}
                   strokeDasharray={`${Math.max(0, len - gap)} ${C}`} strokeDashoffset={-offsets[i]} transform="rotate(-90 100 100)"
-                  style={{ transition: "stroke-width .15s", cursor: "default" }} opacity={hover === null || hover === i ? 1 : 0.35}
+                  style={{ "--c": colorOf(i) } as React.CSSProperties} opacity={hover === null || hover === i ? 1 : 0.35}
                   onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
                   <title>{`${d.label}: ${money(d.cents)} (${Math.round((d.cents / total) * 100)}%)`}</title>
                 </circle>
               );
             })}
+            </g>
             <text x="100" y="92" textAnchor="middle" className="donut-label">{shown ? shown.label.slice(0, 18) : "Total spent"}</text>
             <text x="100" y="116" textAnchor="middle" className="donut-value">{short(shown ? shown.cents : total)}</text>
           </svg>
@@ -72,6 +83,7 @@ export function Bars({ data, title, legend }: { data: Bar[]; title: string; lege
   const ticks = [0, 1, 2, 3, 4].map((i) => (top / 4) * i).filter((v, i, a) => a.indexOf(v) === i);
   const H = 180, L = 44, B = 26, T = 8, Wd = 520;
   const bw = Math.min(46, ((Wd - L) / Math.max(1, data.length)) * 0.55);
+  const uid = useId().replace(/:/g, "");
   const x = (i: number) => L + ((Wd - L) / data.length) * (i + 0.5);
   const y = (v: number) => T + (H - T - B) * (1 - v / top);
   return (
@@ -79,6 +91,12 @@ export function Bars({ data, title, legend }: { data: Bar[]; title: string; lege
       <div className="chart-head"><h3>{title}</h3></div>
       <div className="bars-wrap">
         <svg viewBox={`0 0 ${Wd} ${H}`} className="bars" role="img" aria-label={title}>
+          <defs>
+            <linearGradient id={`${uid}-bar`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" style={{ stopColor: "var(--grad-b)" }} />
+              <stop offset="1" style={{ stopColor: "var(--grad-a)" }} />
+            </linearGradient>
+          </defs>
           {ticks.map((v) => (
             <g key={v}>
               <line x1={L} x2={Wd} y1={y(v)} y2={y(v)} className={v === 0 ? "axis" : "grid"} />
@@ -94,7 +112,8 @@ export function Bars({ data, title, legend }: { data: Bar[]; title: string; lege
                 <rect x={x(i) - ((Wd - L) / data.length) / 2} y={T} width={(Wd - L) / data.length} height={H - T - B} fill="transparent" />
                 {h > 0 && (
                   <path d={`M${x0},${y(0)} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${y(0)} Z`}
-                    fill="var(--series-1)" opacity={hover === null || hover === i ? 1 : 0.45} />
+                    className={hover === i ? "bar on" : "bar"} style={{ animationDelay: `${i * 70}ms` }}
+                    fill={`url(#${uid}-bar)`} opacity={hover === null || hover === i ? 1 : 0.45} />
                 )}
                 <text x={x(i)} y={H - 8} textAnchor="middle" className="tick">{d.label}</text>
               </g>
@@ -108,7 +127,7 @@ export function Bars({ data, title, legend }: { data: Bar[]; title: string; lege
           </div>
         )}
       </div>
-      <div className="chart-foot"><span className="dot" style={{ background: "var(--series-1)" }} /> {legend}</div>
+      <div className="chart-foot"><span className="dot" style={{ background: "var(--grad)" }} /> {legend}</div>
     </div>
   );
 }
