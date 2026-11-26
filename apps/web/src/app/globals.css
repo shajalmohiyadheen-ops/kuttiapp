@@ -4,8 +4,8 @@
   --bg-grad: radial-gradient(900px 600px at 100% 0%, rgb(0 170 255 / 14%) 0%, transparent 60%), radial-gradient(800px 600px at 0% 100%, rgb(0 200 255 / 8%) 0%, transparent 55%), linear-gradient(160deg, #01040b 0%, #020814 55%, #03122b 100%);
   --panel: rgb(4 16 36 / 82%);
   --panel-solid: #051328;
-  --text: #f2f9ff;
-  --muted: #a9c0dc;
+  --text: #e4e6eb;
+  --muted: #b0b3b8;
   --border: rgb(0 200 255 / 28%);
   --neon: 0 0 0 1px rgb(0 200 255 / 18%), 0 0 18px rgb(0 190 255 / 10%);
   --sky: #19d3ff;
@@ -26,7 +26,7 @@
   --ok: #2ee59d;
   --radius: 14px;
   --shadow: 0 10px 30px rgb(0 5 20 / 45%);
-  --font: "Nunito Variable", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Roboto Variable", Roboto, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -34,8 +34,8 @@
   --bg-grad: radial-gradient(900px 600px at 100% 0%, rgb(30 144 255 / 10%) 0%, transparent 60%), radial-gradient(800px 600px at 0% 100%, rgb(79 216 255 / 10%) 0%, transparent 55%), linear-gradient(160deg, #f8fbff 0%, #e8f1ff 100%);
   --panel: rgb(255 255 255 / 90%);
   --panel-solid: #ffffff;
-  --text: #071a3d;
-  --muted: #3f5880;
+  --text: #1c1e21;
+  --muted: #65676b;
   --border: #cfe2f6;
   --neon: 0 0 0 1px rgb(0 140 220 / 8%);
   --sky: #12aee0;
@@ -56,7 +56,7 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; font-weight: 500; line-height: 1.45; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; font-weight: 400; line-height: 1.45; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
 body { background: var(--bg-grad); background-attachment: fixed; min-height: 100vh; }
 /* Neon cyan arcs in two corners, like the glow on the logo */
 body::before, body::after { content: ""; position: fixed; pointer-events: none; border-radius: 50%; border: 2px solid transparent; opacity: var(--arc-opacity); z-index: 0; }
@@ -65,8 +65,8 @@ body::after { width: 760px; height: 760px; bottom: -580px; right: -300px; border
 .layout, .login { position: relative; z-index: 1; }
 @media (max-width: 800px) { body { background-attachment: scroll; } .panel, .tile, .table-wrap, .nav { backdrop-filter: none; } }
 a { color: var(--brand); text-decoration: none; }
-h1 { font-size: 24px; font-weight: 800; margin: 0 0 16px; }
-h2 { font-size: 19px; font-weight: 800; margin: 26px 0 10px; }
+h1 { font-size: 24px; font-weight: 700; margin: 0 0 16px; }
+h2 { font-size: 19px; font-weight: 600; margin: 26px 0 10px; }
 
 .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 .nav { background: var(--panel); backdrop-filter: blur(14px); border-inline-end: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
@@ -94,7 +94,7 @@ h2 { font-size: 19px; font-weight: 800; margin: 26px 0 10px; }
 .tile.out { border-top: 3px solid var(--money-out); }
 .tile.hero { background: linear-gradient(120deg, color-mix(in srgb, var(--sky) 28%, var(--panel-solid)), color-mix(in srgb, var(--azure) 26%, var(--panel-solid)) 50%, color-mix(in srgb, var(--royal) 34%, var(--panel-solid))); }
 .tile .label { color: var(--muted); font-size: 14px; font-weight: 600; }
-.tile .value { white-space: nowrap; font-size: clamp(22px, 2.2vw, 28px); font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tile .value { white-space: nowrap; font-size: clamp(22px, 2.2vw, 28px); font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .tile .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } }
@@ -181,11 +181,11 @@ button.big { font-size: 18px; padding: 14px; }
 .phone header { display: flex; align-items: center; justify-content: space-between; }
 .phone .card { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 18px; box-shadow: var(--shadow); }
 .phone .card.hero { background: linear-gradient(120deg, color-mix(in srgb, var(--sky) 30%, var(--panel-solid)), color-mix(in srgb, var(--azure) 26%, var(--panel-solid)) 50%, color-mix(in srgb, var(--royal) 36%, var(--panel-solid))); }
-.phone .balance { font-size: 40px; font-weight: 900; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.phone .balance { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0; }
 .phone .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.phone .split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 15px; font-weight: 600; }
-.phone .split b { display: block; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.phone .bigbtn { width: 100%; font-size: 23px; font-weight: 800; padding: 22px; border-radius: 22px; border: 0; background: var(--brand-grad); color: var(--brand-ink); box-shadow: 0 10px 30px var(--glow); }
+.phone .split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 15px; font-weight: 500; }
+.phone .split b { display: block; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.phone .bigbtn { width: 100%; font-size: 22px; font-weight: 600; padding: 22px; border-radius: 22px; border: 0; background: var(--brand-grad); color: var(--brand-ink); box-shadow: 0 10px 30px var(--glow); }
 .phone .btn { width: 100%; font-size: 18px; padding: 16px; border-radius: 16px; }
 .phone .choices { display: grid; gap: 10px; }
 .phone .choice { width: 100%; text-align: start; font-size: 19px; padding: 16px 18px; border-radius: 16px; background: var(--panel-solid); border: 1.5px solid var(--border); color: var(--text); }
@@ -194,16 +194,16 @@ button.big { font-size: 18px; padding: 14px; }
 .phone .twin.dates { grid-template-columns: 1.2fr 1fr; }
 .phone .twin.dates input, .phone .twin.dates select { font-size: 16px; padding: 12px 10px; }
 .phone .twin .choice { text-align: center; font-size: 22px; padding: 22px 10px; }
-.phone .step { color: var(--muted); font-size: 16px; font-weight: 600; }
-.phone h1 { font-size: 28px; font-weight: 800; margin: 0; }
+.phone .step { color: var(--muted); font-size: 16px; font-weight: 500; }
+.phone h1 { font-size: 27px; font-weight: 700; margin: 0; }
 .phone input, .phone textarea, .phone select { font-size: 19px; padding: 14px; border-radius: 14px; width: 100%; }
-.phone input.amount { font-size: 38px; font-weight: 900; text-align: center; }
+.phone input.amount { font-size: 38px; font-weight: 700; text-align: center; }
 .phone .mic { width: 140px; height: 140px; border-radius: 50%; border: 0; margin: 6px auto; display: block; font-size: 56px; background: var(--brand-grad); color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--arc) 60%, transparent), 0 10px 30px var(--glow); touch-action: none; user-select: none; -webkit-user-select: none; }
 .phone .mic.on { transform: scale(1.08); outline: 6px solid color-mix(in srgb, var(--azure) 50%, transparent); }
 .phone .photo { width: 100%; max-height: 320px; object-fit: contain; border-radius: 16px; background: #0004; }
 .phone .list { display: grid; gap: 8px; }
-.phone .item { display: flex; justify-content: space-between; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--panel); border: 1px solid var(--border); color: var(--text); text-align: start; width: 100%; font-size: 18px; font-weight: 700; }
-.phone .item .sub { color: var(--muted); font-size: 15px; font-weight: 500; }
+.phone .item { display: flex; justify-content: space-between; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--panel); border: 1px solid var(--border); color: var(--text); text-align: start; width: 100%; font-size: 18px; font-weight: 500; }
+.phone .item .sub { color: var(--muted); font-size: 15px; font-weight: 400; }
 .phone .ok { color: var(--ok); }
 .phone .linkbtn { background: none; border: 0; color: var(--brand); padding: 6px; font-size: 17px; font-weight: 700; }
 .phone .banner { padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--warn) 16%, transparent); font-size: 15px; }
@@ -221,7 +221,7 @@ button.big { font-size: 18px; padding: 14px; }
 .tile.hero, .phone .card.hero { box-shadow: var(--shadow), var(--neon), inset 0 -2px 0 var(--ember); }
 .hint-pending { display: inline-block; margin-top: 6px; font-size: 15px; font-weight: 600; color: var(--warn); }
 
-button { font-weight: 700; }
-input, select, textarea { font-weight: 600; }
+button { font-weight: 600; }
+input, select, textarea { font-weight: 400; }
 .phone .item > div { flex: 1; min-width: 0; }
-.phone .item > span { white-space: nowrap; font-weight: 800; }
+.phone .item > span { white-space: nowrap; font-weight: 700; }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "@fontsource-variable/nunito";
+import "@fontsource-variable/roboto";
 import "./globals.css";
 import { AppProvider } from "@/lib/app-context";
 import { Shell } from "@/components/shell";
