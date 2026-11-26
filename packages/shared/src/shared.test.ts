@@ -18,7 +18,6 @@ describe('money', () => {
   it('formats', () => {
     expect(formatSar('1234567.5')).toBe('SAR 1,234,567.50');
     expect(formatSar(-5)).toBe('-SAR 5.00');
-    expect(formatSar('10', { locale: 'ar' })).toBe('10.00 ر.س');
   });
   it('extracts VAT from an inclusive total', () => {
     expect(vatFromInclusive(11500)).toBe(1500);
@@ -50,8 +49,7 @@ describe('ZATCA QR', () => {
 });
 
 describe('i18n', () => {
-  it('has Arabic for every key and fills variables', () => {
-    expect(t('ar', 'approve')).toBe('اعتماد');
-    expect(t('en', 'invoiceRequired', { amount: 'SAR 100.00' })).toBe('An invoice photo is required above SAR 100.00');
+  it('fills variables', () => {
+    expect(t('invoiceRequired', { amount: 'SAR 100.00' })).toBe('A bill photo is required above SAR 100.00');
   });
 });

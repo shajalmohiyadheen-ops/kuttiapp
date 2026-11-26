@@ -41,13 +41,13 @@ export function fromDb(value: string | number | null | undefined): number {
 }
 
 /** Format for display: "SAR 1,234.50" / "1,234.50 ر.س" */
-export function formatSar(value: number | string | null | undefined, opts: { locale?: 'en' | 'ar'; halalas?: boolean } = {}): string {
+export function formatSar(value: number | string | null | undefined, opts: { halalas?: boolean } = {}): string {
   const halalas = opts.halalas ? Number(value ?? 0) : fromDb(value as string | number | null | undefined);
   const sign = halalas < 0 ? '-' : '';
   const abs = Math.abs(halalas);
   const whole = Math.floor(abs / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const body = `${whole}.${String(abs % 100).padStart(2, '0')}`;
-  return opts.locale === 'ar' ? `${sign}${body} ر.س` : `${sign}SAR ${body}`;
+  return `${sign}SAR ${body}`;
 }
 
 /** VAT contained in a VAT-inclusive total, in halalas. Default KSA rate 15%. */

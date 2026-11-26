@@ -9,21 +9,23 @@ export default function CategoriesPage() {
   const { t } = useApp();
   return (
     <RequireRole roles={["admin"]}>
-      <CrudPage<Category & { odoo_account_code: string | null }>
+      <p className="muted">
+        Untick <strong>{t("receiptRequired")}</strong> for spend that never has a bill, such as cash paid to outside labour. Staff can then save it without a photo, but
+        must write remarks (which project, who was paid).
+      </p>
+      <CrudPage<Category>
         title={t("categories")}
         table="categories"
         order="name"
-        defaults={{ active: true }}
+        defaults={{ active: true, receipt_required: true }}
         fields={[
-          { key: "name", label: t("name"), required: true },
-          { key: "name_ar", label: `${t("name")} (عربي)` },
-          { key: "odoo_account_code", label: "Odoo account code (Phase 2)" },
+          { key: "name", label: t("name"), required: true, placeholder: "e.g. Outside labour" },
+          { key: "receipt_required", label: t("receiptRequired"), type: "checkbox" },
           { key: "active", label: t("active"), type: "checkbox" },
         ]}
         columns={[
           { label: t("name"), render: (c) => c.name },
-          { label: "عربي", render: (c) => c.name_ar ?? "" },
-          { label: "Odoo", render: (c) => <span className="muted">{c.odoo_account_code ?? ""}</span> },
+          { label: t("receiptRequired"), render: (c) => (c.receipt_required ? "Yes" : <span className="muted">No, remarks instead</span>) },
         ]}
       />
     </RequireRole>

@@ -1,30 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useApp } from "@/lib/app-context";
 import { supabase } from "@/lib/supabase";
 import type { MessageKey, UserRole } from "@kuttiapp/shared";
 import { ErrorText, Field, ThemeToggle } from "./ui";
 
 const NAV: Array<{ href: string; key: MessageKey; roles: UserRole[] }> = [
-  { href: "/", key: "dashboard", roles: ["admin", "approver"] },
-  { href: "/approvals", key: "approvals", roles: ["admin", "approver"] },
-  { href: "/expenses", key: "expenses", roles: ["admin", "approver", "custodian"] },
-  { href: "/topups", key: "topups", roles: ["admin"] },
+  { href: "/", key: "dashboard", roles: ["admin", "accounts"] },
+  { href: "/expenses", key: "expenses", roles: ["admin", "accounts"] },
+  { href: "/topups", key: "topups", roles: ["admin", "accounts"] },
+  { href: "/close", key: "closeMonth", roles: ["admin", "accounts"] },
   { href: "/reconciliation", key: "reconciliation", roles: ["admin"] },
   { href: "/wallets", key: "wallets", roles: ["admin"] },
   { href: "/projects", key: "projects", roles: ["admin"] },
   { href: "/categories", key: "categories", roles: ["admin"] },
   { href: "/users", key: "users", roles: ["admin"] },
+  { href: "/invite", key: "invite", roles: ["admin"] },
   { href: "/settings", key: "settings", roles: ["admin"] },
-  { href: "/audit", key: "auditLog", roles: ["admin"] },
+  { href: "/audit", key: "auditLog", roles: ["admin", "accounts"] },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { ready, session, profile, t, locale, setLocale } = useApp();
+  const { ready, session, profile, t } = useApp();
   const path = usePathname();
+  const router = useRouter();
+  const isPhoneApp = path.startsWith("/app");
+
+  // Staff always use the phone screens; admins and accounts can open them too.
+  useEffect(() => {
+    if (profile?.role === "custodian" && !isPhoneApp) router.replace("/app");
+  }, [profile, isPhoneApp, router]);
 
   if (!ready) return null;
   if (!session) return <Login />;
@@ -32,11 +40,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   if (!profile.active) {
     return (
       <div className="login panel">
-        <p>This account is disabled. Ask a finance admin to re-activate it.</p>
+        <p>This account is switched off. Ask your admin to switch it back on.</p>
         <button onClick={() => supabase().auth.signOut()}>{t("signOut")}</button>
       </div>
     );
   }
+  if (isPhoneApp) return <>{children}</>;
+  if (profile.role === "custodian") return null;
 
   const items = NAV.filter((n) => n.roles.includes(profile.role));
   return (
@@ -51,15 +61,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {t(n.key)}
           </Link>
         ))}
+        <Link href="/app">📱 Phone view</Link>
         <div className="spacer" />
         <ThemeToggle />
-        <a href="#" onClick={(e) => (e.preventDefault(), setLocale(locale === "en" ? "ar" : "en"))}>
-          {t("language")}
-        </a>
         <div className="who">
           {profile.full_name || profile.email}
           <br />
-          {t(profile.role === "admin" ? "admin" : profile.role)}
+          {t(profile.role)}
         </div>
         <a href="#" onClick={(e) => (e.preventDefault(), supabase().auth.signOut())}>
           {t("signOut")}
@@ -71,7 +79,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Login() {
-  const { t, locale, setLocale } = useApp();
+  const { t } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -83,29 +91,29 @@ function Login() {
         e.preventDefault();
         setBusy(true);
         setError(null);
-        const { error } = await supabase().auth.signInWithPassword({ email, password });
+        const { error } = await supabase().auth.signInWithPassword({ email: email.trim(), password });
         setBusy(false);
-        if (error) setError(error.message);
+        if (error) setError(error.message === "Invalid login credentials" ? "Wrong email or password. Ask your admin to reset it if you forgot." : error.message);
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="logo" src="/logo.png" alt="KuttiApp" />
-      <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 14 }}>
         <Field label={t("email")}>
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input type="email" inputMode="email" autoCapitalize="none" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </Field>
         <Field label={t("password")}>
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
         <ErrorText error={error} />
-        <button className="primary" disabled={busy}>{t("signIn")}</button>
-        <button type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>{t("language")}</button>
+        <button className="primary big" disabled={busy}>{t("signIn")}</button>
+        <ThemeToggle />
       </div>
     </form>
   );
 }
 
-/** Wrap admin-only page content. RLS enforces this anyway; this just avoids empty screens. */
+/** Wrap role-only page content. RLS enforces this anyway; this just avoids empty screens. */
 export function RequireRole({ roles, children }: { roles: UserRole[]; children: React.ReactNode }) {
   const { profile } = useApp();
   if (!profile || !roles.includes(profile.role)) return <p className="muted">You don&apos;t have access to this page.</p>;

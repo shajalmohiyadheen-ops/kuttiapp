@@ -48,9 +48,9 @@ function Reconciliation() {
     <>
       <h1>{t("reconciliation")}</h1>
       <div className="notice">
-        KuttiApp can&apos;t read Alinma balances directly, so the balance here is calculated: top-ups minus every expense except reversed ones. A rejected expense still counts, because the money was spent; rejection is for accounts and audit.
-        Once a week (or at month end), enter the balance from the bank statement or the Alinma app. Any difference means a swipe or transfer that
-        hasn&apos;t been entered, or an amount typed wrong.
+        Optional. KuttiApp calculates each wallet: brought forward + transfers in − every saved expense (card and cash). When you get a card statement,
+        you can note its balance here. The wallet includes cash the holder has withdrawn but not spent yet, so a difference is normal while cash is in hand;
+        anything beyond that is a missing or mistyped entry.
       </div>
 
       <div className="panel">
@@ -116,7 +116,6 @@ function Reconciliation() {
               <th>{t("wallet")}</th>
               <th className="num">{t("statementBalance")}</th>
               <th className="num">{t("calculatedBalance")}</th>
-              <th className="num">{t("pending")}</th>
               <th className="num">{t("difference")}</th>
               <th>{t("notes")}</th>
               <th>Recorded</th>
@@ -129,14 +128,13 @@ function Reconciliation() {
                 <td>{name("wallets", c.wallet_id)}</td>
                 <td className="num"><Money value={c.statement_balance} /></td>
                 <td className="num"><Money value={c.calculated_balance} /></td>
-                <td className="num"><Money value={c.pending_amount} /></td>
                 <td className="num"><Diff value={c.difference} /></td>
                 <td>{c.notes}</td>
                 <td className="small muted">{fmtDateTime(c.created_at)}</td>
               </tr>
             ))}
             {checks.data?.length === 0 && (
-              <tr><td colSpan={8} className="muted">{t("noData")}</td></tr>
+              <tr><td colSpan={7} className="muted">{t("noData")}</td></tr>
             )}
           </tbody>
         </table>
@@ -148,5 +146,5 @@ function Reconciliation() {
 function Diff({ value }: { value: string | number }) {
   const { t } = useApp();
   const zero = fromDb(value) === 0;
-  return zero ? <span className="badge approved">{t("matched")}</span> : <strong className="neg"><Money value={value} /></strong>;
+  return zero ? <span className="badge checked">{t("matched")}</span> : <strong className="neg"><Money value={value} /></strong>;
 }

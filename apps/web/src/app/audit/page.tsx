@@ -19,7 +19,7 @@ interface AuditRow {
 
 export default function AuditPage() {
   return (
-    <RequireRole roles={["admin"]}>
+    <RequireRole roles={["admin", "accounts"]}>
       <Audit />
     </RequireRole>
   );
@@ -47,7 +47,7 @@ function Audit() {
         <Field label="Table">
           <select value={table} onChange={(e) => setTable(e.target.value)}>
             <option value="">{t("all")}</option>
-            {["expenses", "topups", "wallets", "projects", "categories", "profiles", "settings", "statement_checks"].map((x) => (
+            {["expenses", "topups", "wallets", "projects", "categories", "profiles", "settings", "statement_checks", "closed_months"].map((x) => (
               <option key={x} value={x}>{x}</option>
             ))}
           </select>

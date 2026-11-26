@@ -26,3 +26,24 @@ export async function signedUrl(bucket: "invoices" | "attachments", path: string
   const { data } = await supabase().storage.from(bucket).createSignedUrl(path, 60 * 10);
   return data?.signedUrl ?? null;
 }
+
+/**
+ * Calls `onChange` whenever an expense or transfer the user can see is added or
+ * changed by anyone (Supabase Realtime), so lists update without a refresh.
+ */
+export function subscribeLive(onChange: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const debounced = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(onChange, 400);
+  };
+  const channel = supabase()
+    .channel(`live-${Math.random().toString(36).slice(2)}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, debounced)
+    .on("postgres_changes", { event: "*", schema: "public", table: "topups" }, debounced)
+    .subscribe();
+  return () => {
+    if (timer) clearTimeout(timer);
+    supabase().removeChannel(channel);
+  };
+}

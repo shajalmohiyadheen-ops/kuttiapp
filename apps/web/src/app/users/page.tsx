@@ -7,7 +7,7 @@ import { supabase, must } from "@/lib/supabase";
 import { RequireRole } from "@/components/shell";
 import { ErrorText, Field, Modal, useAction, useLoad } from "@/components/ui";
 
-const ROLES: UserRole[] = ["custodian", "approver", "admin"];
+const ROLES: UserRole[] = ["custodian", "accounts", "admin"];
 
 export default function UsersPage() {
   return (
@@ -23,13 +23,18 @@ function Users() {
   const [editing, setEditing] = useState<Profile | null>(null);
   const [adding, setAdding] = useState(false);
   const action = useAction();
-  const roleLabel = (r: UserRole) => t(r === "admin" ? "admin" : r);
+  const roleLabel = (r: UserRole) => t(r);
+  const [resetting, setResetting] = useState<Profile | null>(null);
 
   return (
     <>
       <h1>{t("users")}</h1>
       <div className="toolbar">
-        <p className="muted grow">Custodians hold cards or cash and submit expenses. Approvers approve expenses on projects assigned to them. Finance admins do everything.</p>
+        <p className="muted grow">
+          Add anyone with any email address (Gmail or company mail). <strong>Field Staff</strong> carry a card and record spending on their phone; they only see their own
+          wallet. <strong>Accounts</strong> review everything on the central dashboard, download bills and tick entries as checked. <strong>Super Admin</strong> sets up
+          users, wallets, projects and transfers, and closes months.
+        </p>
         <button className="primary" onClick={() => setAdding(true)}>{t("inviteUser")}</button>
       </div>
       <ErrorText error={list.error} />
@@ -78,6 +83,9 @@ function Users() {
             </label>
           </div>
           {editing.id === me?.id && <p className="muted small">You can&apos;t change your own role or deactivate yourself.</p>}
+          <p className="small">
+            <a href="#" onClick={(e) => (e.preventDefault(), setResetting(editing), setEditing(null))}>{t("resetPassword")}</a>
+          </p>
           <ErrorText error={action.error} />
           <div className="actions">
             <button onClick={() => setEditing(null)}>{t("cancel")}</button>
@@ -106,6 +114,7 @@ function Users() {
           </div>
         </Modal>
       )}
+      {resetting && <ResetPassword user={resetting} onClose={() => setResetting(null)} />}
       {adding && <AddUser onClose={() => setAdding(false)} onSaved={() => (setAdding(false), list.reload(), reloadLookups())} />}
     </>
   );
@@ -127,7 +136,7 @@ function AddUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
         <Field label={t("role")}>
           <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as UserRole })}>
             {ROLES.map((r) => (
-              <option key={r} value={r}>{t(r === "admin" ? "admin" : r)}</option>
+              <option key={r} value={r}>{t(r)}</option>
             ))}
           </select>
         </Field>
@@ -135,7 +144,7 @@ function AddUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
           <input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
         </Field>
       </div>
-      <p className="muted small">Share the email and temporary password with the person directly. They can change it later.</p>
+      <p className="muted small">Share the email and password with the person directly (in person or on WhatsApp). For staff, also send the install link from <a href="/invite">Invite staff</a>.</p>
       <ErrorText error={action.error} />
       <div className="actions">
         <button onClick={onClose}>{t("cancel")}</button>
@@ -158,6 +167,51 @@ function AddUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
         >
           {t("save")}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ResetPassword({ user, onClose }: { user: Profile; onClose: () => void }) {
+  const { t, session } = useApp();
+  const [password, setPassword] = useState(suggestPassword());
+  const [done, setDone] = useState(false);
+  const action = useAction();
+  return (
+    <Modal title={`${t("resetPassword")}: ${user.full_name || user.email}`} onClose={onClose}>
+      {done ? (
+        <p>
+          Done. The new password is <strong className="mono">{password}</strong>. Send it to {user.full_name || user.email}.
+        </p>
+      ) : (
+        <Field label="New password">
+          <input value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+      )}
+      <ErrorText error={action.error} />
+      <div className="actions">
+        <button onClick={onClose}>{done ? "Close" : t("cancel")}</button>
+        {!done && (
+          <button
+            className="primary"
+            disabled={action.busy}
+            onClick={async () => {
+              const ok = await action.run(async () => {
+                const res = await fetch("/api/users", {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json", authorization: `Bearer ${session?.access_token}` },
+                  body: JSON.stringify({ id: user.id, password }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || "Failed");
+                return true;
+              });
+              if (ok) setDone(true);
+            }}
+          >
+            {t("resetPassword")}
+          </button>
+        )}
       </div>
     </Modal>
   );

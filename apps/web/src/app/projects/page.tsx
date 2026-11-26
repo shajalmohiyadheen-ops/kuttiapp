@@ -4,33 +4,25 @@ import type { Project } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
 import { RequireRole } from "@/components/shell";
 import { CrudPage } from "@/components/crud";
-import { Money } from "@/components/ui";
 
 export default function ProjectsPage() {
-  const { t, lookups, name } = useApp();
-  const approvers = lookups.profiles
-    .filter((p) => p.active && (p.role === "approver" || p.role === "admin"))
-    .map((p) => ({ value: p.id, label: p.full_name || p.email || p.id }));
+  const { t } = useApp();
   return (
     <RequireRole roles={["admin"]}>
+      <p className="muted">The project list staff pick from on their phone. Untick Active when a project ends; it stays in past records.</p>
       <CrudPage<Project>
         title={t("projects")}
         table="projects"
-        order="code"
+        order="name"
         defaults={{ active: true }}
         fields={[
-          { key: "code", label: t("code"), required: true, placeholder: "P-001" },
-          { key: "name", label: t("name"), required: true },
-          { key: "name_ar", label: `${t("name")} (عربي)` },
-          { key: "approver_id", label: t("approver"), type: "select", options: approvers },
-          { key: "budget", label: `${t("budget")} (SAR)`, type: "number" },
+          { key: "name", label: t("name"), required: true, placeholder: "e.g. ABB substation" },
+          { key: "code", label: `${t("code")} (optional)` },
           { key: "active", label: t("active"), type: "checkbox" },
         ]}
         columns={[
-          { label: t("code"), render: (p) => p.code },
-          { label: t("name"), render: (p) => p.name + (p.name_ar ? ` · ${p.name_ar}` : "") },
-          { label: t("approver"), render: (p) => (p.approver_id ? name("profiles", p.approver_id) : <span className="muted">Finance admin</span>) },
-          { label: t("budget"), num: true, render: (p) => (p.budget === null ? "—" : <Money value={p.budget} />) },
+          { label: t("name"), render: (p) => p.name },
+          { label: t("code"), render: (p) => <span className="muted">{p.code ?? ""}</span> },
         ]}
       />
     </RequireRole>

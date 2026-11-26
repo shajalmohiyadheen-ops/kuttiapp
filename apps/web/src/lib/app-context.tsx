@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { t as translate, isRtl, type Locale, type MessageKey, type Profile, type Project, type Category, type Wallet } from "@kuttiapp/shared";
+import { t as translate, type MessageKey, type Profile, type Project, type Category, type Wallet } from "@kuttiapp/shared";
 import { supabase, must } from "./supabase";
 
 interface Lookups {
@@ -10,35 +10,30 @@ interface Lookups {
   projects: Project[];
   categories: Category[];
   wallets: Wallet[];
+  settings: Record<string, unknown>;
 }
 
 interface AppState {
   ready: boolean;
   session: Session | null;
   profile: Profile | null;
-  locale: Locale;
-  setLocale: (l: Locale) => void;
   t: (key: MessageKey, vars?: Record<string, string>) => string;
   lookups: Lookups;
   reloadLookups: () => Promise<void>;
   name: (map: "profiles" | "projects" | "categories" | "wallets", id: string | null | undefined) => string;
+  setting: (key: string, fallback: number) => number;
 }
 
 const Ctx = createContext<AppState | null>(null);
-const empty: Lookups = { profiles: [], projects: [], categories: [], wallets: [] };
+const empty: Lookups = { profiles: [], projects: [], categories: [], wallets: [], settings: {} };
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [locale, setLocaleState] = useState<Locale>("en");
   const [lookups, setLookups] = useState<Lookups>(empty);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("kutti.locale");
-      if (saved === "ar" || saved === "en") setLocaleState(saved);
-    } catch {}
     const sb = supabase();
     sb.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -48,25 +43,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    document.documentElement.lang = locale;
-    document.documentElement.dir = isRtl(locale) ? "rtl" : "ltr";
-  }, [locale]);
-
   const reloadLookups = useCallback(async () => {
     const sb = supabase();
-    const [profiles, projects, categories, wallets] = await Promise.all([
+    const [profiles, projects, categories, wallets, settings] = await Promise.all([
       sb.from("profiles").select("*").order("full_name"),
-      sb.from("projects").select("*").order("code"),
+      sb.from("projects").select("*").order("name"),
       sb.from("categories").select("*").order("name"),
       sb.from("wallets").select("*").order("name"),
+      sb.from("settings").select("key, value"),
     ]);
-    setLookups({
+    const next: Lookups = {
       profiles: must(profiles) as Profile[],
       projects: must(projects) as Project[],
       categories: must(categories) as Category[],
       wallets: must(wallets) as Wallet[],
-    });
+      settings: Object.fromEntries((must(settings) as Array<{ key: string; value: unknown }>).map((r) => [r.key, r.value])),
+    };
+    setLookups(next);
+    try {
+      localStorage.setItem("kutti.lookups", JSON.stringify(next)); // used by the phone app when offline
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -75,48 +71,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setLookups(empty);
       return;
     }
+    try {
+      const cached = localStorage.getItem("kutti.lookups");
+      if (cached) setLookups(JSON.parse(cached));
+      const p = localStorage.getItem("kutti.profile");
+      if (p && JSON.parse(p).id === session.user.id) setProfile(JSON.parse(p));
+    } catch {}
     supabase()
       .from("profiles")
       .select("*")
       .eq("id", session.user.id)
       .single()
       .then(({ data }) => {
+        if (!data) return;
         setProfile(data as Profile);
-        if (data?.locale === "ar" || data?.locale === "en") {
-          try {
-            if (!localStorage.getItem("kutti.locale")) setLocaleState(data.locale);
-          } catch {}
-        }
+        try {
+          localStorage.setItem("kutti.profile", JSON.stringify(data));
+        } catch {}
       });
     reloadLookups().catch(console.error);
   }, [session, reloadLookups]);
 
-  const setLocale = useCallback((l: Locale) => {
-    setLocaleState(l);
-    try {
-      localStorage.setItem("kutti.locale", l);
-    } catch {}
-  }, []);
-
   const value = useMemo<AppState>(() => {
     const maps = {
       profiles: new Map(lookups.profiles.map((p) => [p.id, p.full_name || p.email || "?"])),
-      projects: new Map(lookups.projects.map((p) => [p.id, `${p.code} ${locale === "ar" && p.name_ar ? p.name_ar : p.name}`])),
-      categories: new Map(lookups.categories.map((c) => [c.id, locale === "ar" && c.name_ar ? c.name_ar : c.name])),
+      projects: new Map(lookups.projects.map((p) => [p.id, p.name])),
+      categories: new Map(lookups.categories.map((c) => [c.id, c.name])),
       wallets: new Map(lookups.wallets.map((w) => [w.id, w.name])),
     };
     return {
       ready,
       session,
       profile,
-      locale,
-      setLocale,
-      t: (key, vars) => translate(locale, key, vars),
+      t: (key, vars) => translate(key, vars),
       lookups,
       reloadLookups,
       name: (map, id) => (id ? maps[map].get(id) ?? "—" : "—"),
+      setting: (key, fallback) => {
+        const v = Number(lookups.settings[key]);
+        return Number.isFinite(v) ? v : fallback;
+      },
     };
-  }, [ready, session, profile, locale, setLocale, lookups, reloadLookups]);
+  }, [ready, session, profile, lookups, reloadLookups]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

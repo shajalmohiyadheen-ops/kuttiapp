@@ -1,34 +1,40 @@
--- KuttiApp: petty cash and company card tracker
--- Phase 1 schema. Runs on Supabase Postgres (uses auth.users, auth.uid(), storage).
+-- KuttiApp: petty cash and company card spending record
+-- Runs on Supabase Postgres (uses auth.users, auth.uid(), storage).
+--
+-- What it is
+--   A record of what was spent from each company card or cash float, on which
+--   project, with the bill photo. There is no approval step: a saved expense counts
+--   straight away. Accounts and audit look through the entries, tick them as
+--   "checked", and sort out questions outside the app.
 --
 -- Money rules
 --   * Every amount is numeric(14,2) in SAR.
 --   * A wallet's balance is CALCULATED: opening balance + posted top-ups minus every
---     expense that isn't reversed (spent money has left the card whatever its review
---     status). It is never read from the bank. Reconciliation is manual (statement_checks).
---   * Day to day, top-ups and expenses are never deleted, and approved ones are never
---     edited. They are reversed, which keeps the row and records who and why.
+--     expense that isn't reversed. It is never read from the bank. Reconciliation
+--     against the bank statement is a manual step (statement_checks).
+--   * Day to day nothing is deleted. A wrong entry is reversed by finance, which
+--     keeps the row and records who and why. Staff can correct their own entry until
+--     accounts has checked it.
 --   * Monthly close: every row belongs to a period month. Once a month has been
---     exported (Excel + invoice zip, for Odoo) a finance admin can close it with
---     close_month(), which carries each wallet's net movement into
---     wallets.opening_balance and then erases that month's rows and invoice files.
---     Only the current month and the months inside the retention window accept entries.
+--     exported (Excel + invoice zip, for Odoo) a finance admin closes it with
+--     close_month(): each wallet's net movement goes into wallets.opening_balance,
+--     then the month's rows and invoice files are erased. Only the current month and
+--     the months inside the retention window (setting, default 5) accept entries.
 --
--- Phase 2 (Odoo): every financial row carries external_id (stable, unique) plus
--- odoo_* columns that the sync job will fill in. Nothing in Phase 1 writes them.
+-- Phase 2 (Odoo): every financial row carries a stable external_id plus odoo_*
+-- columns for a sync job. Nothing writes them yet.
 
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
--- admin: everything. accounts: back office (accounts / audit), sees every entry and invoice,
--- and approves or rejects too if the admin ticks can_review. approver: a project manager,
--- sees and approves their projects. custodian: holds a card or cash float and records spend.
-create type public.user_role as enum ('admin', 'accounts', 'approver', 'custodian');
-create type public.wallet_kind as enum ('card', 'cash');
+-- admin: finance, everything. accounts: accounts / audit, sees every entry and
+-- invoice and marks entries checked. custodian: staff holding a card or cash float.
+create type public.user_role as enum ('admin', 'accounts', 'custodian');
+create type public.payment_method as enum ('card', 'cash');   -- card swipe, or cash withdrawn from the card
 create type public.topup_status as enum ('posted', 'reversed');
-create type public.expense_status as enum ('pending', 'changes_requested', 'approved', 'rejected', 'reversed');
+create type public.expense_status as enum ('recorded', 'reversed');
 create type public.sync_status as enum ('not_synced', 'queued', 'synced', 'failed');
 
 -- ---------------------------------------------------------------------------
@@ -40,8 +46,6 @@ create table public.profiles (
   email       text,
   phone       text,
   role        public.user_role not null default 'custodian',
-  can_review  boolean not null default false,   -- accounts users: may approve / reject
-  locale      text not null default 'en' check (locale in ('en', 'ar')),
   active      boolean not null default true,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -63,25 +67,11 @@ as $$
   select coalesce(public.current_role_name() = 'admin', false)
 $$;
 
-create or replace function public.is_staff()
-returns boolean  -- admin, accounts or approver: can see across custodians
-language sql stable security definer set search_path = public
-as $$
-  select coalesce(public.current_role_name() in ('admin', 'accounts', 'approver'), false)
-$$;
-
 create or replace function public.sees_everything()
-returns boolean  -- admin or accounts: every expense, invoice and the audit log
+returns boolean  -- admin or accounts: every wallet, entry, invoice and the audit log
 language sql stable security definer set search_path = public
 as $$
   select coalesce(public.current_role_name() in ('admin', 'accounts'), false)
-$$;
-
-create or replace function public.current_can_review()
-returns boolean
-language sql stable security definer set search_path = public
-as $$
-  select coalesce((select can_review from public.profiles where id = auth.uid()), false)
 $$;
 
 -- New auth user -> profile. The first user ever becomes admin so a fresh
@@ -112,28 +102,26 @@ create trigger on_auth_user_created
 -- Master data
 -- ---------------------------------------------------------------------------
 create table public.wallets (
-  id            uuid primary key default gen_random_uuid(),
-  external_id   text not null unique default ('KW-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10))),
-  name          text not null,
-  kind          public.wallet_kind not null,
-  custodian_id  uuid not null references public.profiles (id),
-  bank_name     text default 'Alinma',
-  card_last4    text check (card_last4 is null or card_last4 ~ '^[0-9]{4}$'),
-  active        boolean not null default true,
+  id              uuid primary key default gen_random_uuid(),
+  external_id     text not null unique default ('KW-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10))),
+  -- One wallet per holder: the company card plus any cash withdrawn from it.
+  name            text not null,
+  custodian_id    uuid not null references public.profiles (id),
+  bank_name       text default 'Alinma',
+  card_last4      text check (card_last4 is null or card_last4 ~ '^[0-9]{4}$'),
+  active          boolean not null default true,
   opening_balance numeric(14,2) not null default 0,  -- net of all closed (erased) months, set by close_month()
-  odoo_journal_id integer,           -- Phase 2: Odoo journal this wallet maps to
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now(),
-  constraint card_has_last4 check (kind = 'cash' or card_last4 is not null)
+  odoo_journal_id integer,             -- Phase 2: Odoo journal this wallet maps to
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
 );
+create unique index wallets_one_active_per_holder on public.wallets (custodian_id) where active;
 
 create table public.projects (
   id            uuid primary key default gen_random_uuid(),
   external_id   text not null unique default ('KP-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10))),
-  code          text not null unique,
-  name          text not null,
-  name_ar       text,
-  approver_id   uuid references public.profiles (id),   -- optional project manager
+  name          text not null unique,
+  code          text unique,           -- optional short code; Phase 2 maps projects to Odoo
   budget        numeric(14,2) check (budget is null or budget >= 0),
   active        boolean not null default true,
   odoo_analytic_account_id integer,  -- Phase 2
@@ -144,7 +132,6 @@ create table public.projects (
 create table public.categories (
   id            uuid primary key default gen_random_uuid(),
   name          text not null unique,
-  name_ar       text,
   -- false for spend that has no bill, e.g. cash paid to outside labour:
   -- the photo is then optional and remarks are required instead
   receipt_required boolean not null default true,
@@ -161,7 +148,7 @@ create table public.settings (
 );
 
 insert into public.settings (key, value) values
-  ('invoice_required_above', '100'::jsonb),   -- SAR; invoice photo mandatory above this
+  ('invoice_required_above', '100'::jsonb),   -- SAR; bill photo mandatory above this (categories that need a bill)
   ('vat_rate', '0.15'::jsonb),
   ('retention_months', '5'::jsonb),           -- how many months (incl. the current one) accept entries
   ('storage_limit_mb', '1000'::jsonb);        -- file storage on the Supabase plan; dashboard warns at 80%
@@ -184,7 +171,6 @@ create table public.topups (
   transfer_date   date not null default current_date,
   period_month    date not null,      -- first day of the month this belongs to (defaults from transfer_date)
   method          text not null default 'bank_transfer' check (method in ('bank_transfer', 'cash', 'opening_balance', 'custodian_repayment', 'other')),
-  -- custodian_repayment: money a custodian hands back to the card or float
   reference       text,               -- bank transfer reference
   notes           text,
   attachment_path text,               -- storage path in the 'attachments' bucket
@@ -209,10 +195,11 @@ create index on public.topups (period_month);
 create table public.expenses (
   id               uuid primary key default gen_random_uuid(),
   external_id      text not null unique default ('KE-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10))),
-  client_id        uuid unique,       -- set by the mobile app; makes offline resubmits idempotent
+  client_id        uuid unique,       -- set by the phone app; makes offline resends idempotent
   wallet_id        uuid not null references public.wallets (id),
   project_id       uuid not null references public.projects (id),
   category_id      uuid not null references public.categories (id),
+  paid_by          public.payment_method not null,   -- card swipe or cash; both come out of the wallet
   submitted_by     uuid not null default auth.uid() references public.profiles (id),
   expense_date     date not null default current_date,
   period_month     date not null,     -- first day of the month this belongs to (defaults from expense_date)
@@ -223,10 +210,10 @@ create table public.expenses (
   amount           numeric(14,2) not null check (amount > 0),      -- total paid, VAT inclusive
   vat_amount       numeric(14,2) not null default 0 check (vat_amount >= 0),
   invoice_path     text,              -- storage path in the 'invoices' bucket
-  status           public.expense_status not null default 'pending',
-  review_note      text,
-  reviewed_by      uuid references public.profiles (id),
-  reviewed_at      timestamptz,
+  status           public.expense_status not null default 'recorded',
+  checked_by       uuid references public.profiles (id),   -- accounts / audit cross-check
+  checked_at       timestamptz,
+  check_note       text,
   reversed_by      uuid references public.profiles (id),
   reversed_at      timestamptz,
   reversal_reason  text,
@@ -235,6 +222,7 @@ create table public.expenses (
   odoo_sync        public.sync_status not null default 'not_synced',
   odoo_bill_id     integer,
   constraint vat_not_above_amount check (vat_amount <= amount),
+  constraint checked_complete check ((checked_at is null) = (checked_by is null)),
   constraint reversal_complete check (
     (status = 'reversed') = (reversed_at is not null and reversed_by is not null and coalesce(reversal_reason, '') <> '')
   )
@@ -242,23 +230,7 @@ create table public.expenses (
 create index on public.expenses (wallet_id, status);
 create index on public.expenses (project_id, expense_date);
 create index on public.expenses (submitted_by, created_at desc);
-create index on public.expenses (status, created_at);
 create index on public.expenses (period_month, status);
-
--- ---------------------------------------------------------------------------
--- Approval history: one row per decision, so "changes requested" -> resubmit
--- -> approve is all visible.
--- ---------------------------------------------------------------------------
-create table public.expense_events (
-  id          bigint generated always as identity primary key,
-  expense_id  uuid not null references public.expenses (id),
-  from_status public.expense_status,
-  to_status   public.expense_status not null,
-  note        text,
-  actor_id    uuid references public.profiles (id),
-  at          timestamptz not null default now()
-);
-create index on public.expense_events (expense_id, at);
 
 -- ---------------------------------------------------------------------------
 -- Manual reconciliation against the bank statement
@@ -269,7 +241,6 @@ create table public.statement_checks (
   statement_date      date not null,
   statement_balance   numeric(14,2) not null,
   calculated_balance  numeric(14,2) not null,   -- snapshot at the time of the check
-  pending_amount      numeric(14,2) not null,   -- pending expenses at that time
   difference          numeric(14,2) generated always as (statement_balance - calculated_balance) stored,
   notes               text,
   created_by          uuid not null default auth.uid() references public.profiles (id),
@@ -281,13 +252,13 @@ create index on public.statement_checks (wallet_id, statement_date desc);
 -- Monthly close: exports taken, and months already erased
 -- ---------------------------------------------------------------------------
 create table public.month_exports (
-  id           bigint generated always as identity primary key,
-  month        date not null check (month = date_trunc('month', month)::date),
-  fingerprint  text not null,          -- month_fingerprint() when the export was taken
+  id            bigint generated always as identity primary key,
+  month         date not null check (month = date_trunc('month', month)::date),
+  fingerprint   text not null,          -- month_fingerprint() when the export was taken
   expense_count integer not null,
-  file_count   integer not null,
-  exported_by  uuid not null default auth.uid() references public.profiles (id),
-  exported_at  timestamptz not null default now()
+  file_count    integer not null,
+  exported_by   uuid not null default auth.uid() references public.profiles (id),
+  exported_at   timestamptz not null default now()
 );
 create index on public.month_exports (month, exported_at desc);
 
@@ -304,7 +275,7 @@ create table public.closed_months (
 );
 
 -- ---------------------------------------------------------------------------
--- Audit log: every insert/update on financial and master tables
+-- Audit log: every insert/update/delete on financial and master tables
 -- ---------------------------------------------------------------------------
 create table public.audit_log (
   id          bigint generated always as identity primary key,
@@ -324,10 +295,13 @@ returns trigger
 language plpgsql security definer set search_path = public
 as $$
 begin
+  -- rows erased by close_month() are not logged one by one; the closed_months row is the record
+  if tg_op = 'DELETE' and current_setting('kutti.closing', true) = 'on' then return old; end if;
   insert into public.audit_log (table_name, record_id, action, actor_id, old_data, new_data)
   values (
     tg_table_name,
-    coalesce((case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end) ->> 'id', '?'),
+    coalesce((case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end) ->> 'id',
+             (case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end) ->> 'month', '?'),
     lower(tg_op),
     auth.uid(),
     case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end,
@@ -373,8 +347,8 @@ end $$;
 
 create trigger no_delete_topups   before delete on public.topups   for each row execute function public.forbid_delete();
 create trigger no_delete_expenses before delete on public.expenses for each row execute function public.forbid_delete();
-create trigger no_delete_events   before delete on public.expense_events for each row execute function public.forbid_delete();
 create trigger no_delete_checks   before delete on public.statement_checks for each row execute function public.forbid_delete();
+create trigger no_delete_closed   before delete on public.closed_months for each row execute function public.forbid_delete();
 create trigger no_delete_audit    before delete on public.audit_log for each row execute function public.forbid_delete();
 
 -- Period month: defaults from the entry date, and must be an open month:
@@ -389,7 +363,6 @@ returns trigger language plpgsql security definer set search_path = public as $$
 declare
   v_date date := case when tg_table_name = 'topups' then to_jsonb(new) ->> 'transfer_date' else to_jsonb(new) ->> 'expense_date' end;
 begin
-  if current_setting('kutti.closing', true) = 'on' then return new; end if;
   new.period_month := date_trunc('month', coalesce(new.period_month, v_date, current_date))::date;
   if tg_op = 'INSERT' or new.period_month is distinct from old.period_month then
     if exists (select 1 from public.closed_months where month = new.period_month) then
@@ -411,15 +384,8 @@ create trigger a_period_expenses before insert or update on public.expenses for 
 create or replace function public.guard_topup_update()
 returns trigger language plpgsql as $$
 begin
-  if old.status = 'reversed' then
-    if (new.odoo_sync, new.odoo_move_id) is distinct from (old.odoo_sync, old.odoo_move_id)
-       and (to_jsonb(new) - 'odoo_sync' - 'odoo_move_id' - 'period_month') = (to_jsonb(old) - 'odoo_sync' - 'odoo_move_id' - 'period_month') then
-      return new;
-    end if;
-    if new.period_month is distinct from old.period_month
-       and (to_jsonb(new) - 'period_month') = (to_jsonb(old) - 'period_month') then
-      return new;
-    end if;
+  if old.status = 'reversed'
+     and (to_jsonb(new) - 'odoo_sync' - 'odoo_move_id' - 'period_month') <> (to_jsonb(old) - 'odoo_sync' - 'odoo_move_id' - 'period_month') then
     raise exception 'reversed top-ups are read only';
   end if;
   if (new.wallet_id, new.amount, new.transfer_date, new.method, new.created_by, new.created_at)
@@ -430,131 +396,78 @@ begin
 end $$;
 create trigger guard_topup before update on public.topups for each row execute function public.guard_topup_update();
 
--- Expenses: content may change only while pending / changes_requested.
--- Status may only move along the allowed paths.
+-- Expenses: the content may change until accounts has checked it (finance can
+-- always correct it). Reversed rows are read only.
 create or replace function public.guard_expense()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 declare
   v_threshold numeric := public.setting_numeric('invoice_required_above', 100);
-  v_wallet public.wallets;
   v_category public.categories;
+  -- everything except bookkeeping columns
+  v_content_new jsonb := to_jsonb(new) - 'status' - 'checked_by' - 'checked_at' - 'check_note' - 'reversed_by' - 'reversed_at'
+                         - 'reversal_reason' - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month';
+  v_content_old jsonb;
 begin
-  if tg_op = 'INSERT' and new.status <> 'pending' then
-    raise exception 'new expenses start as pending';
-  end if;
-
-  if tg_op = 'UPDATE' then
-    if new.period_month is distinct from old.period_month and old.status not in ('pending', 'changes_requested') and not public.is_admin() then
-      raise exception 'only finance can move a reviewed expense to another month';
+  if tg_op = 'INSERT' then
+    if new.status <> 'recorded' or new.checked_by is not null then
+      raise exception 'new expenses start as recorded and unchecked';
     end if;
-    if old.status in ('rejected', 'reversed') then
-      if (to_jsonb(new) - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month') <> (to_jsonb(old) - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month') then
-        raise exception 'expense % is %, it is read only', old.external_id, old.status;
-      end if;
-      return new;
+    if not exists (select 1 from public.wallets where id = new.wallet_id and active) then
+      raise exception 'this card or cash float is inactive';
     end if;
-    if old.status = 'approved' and new.status not in ('approved', 'reversed') then
-      raise exception 'approved expenses can only be reversed';
-    end if;
-    if old.status = 'approved'
-       and (to_jsonb(new) - 'status' - 'reversed_by' - 'reversed_at' - 'reversal_reason' - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month')
-           <> (to_jsonb(old) - 'status' - 'reversed_by' - 'reversed_at' - 'reversal_reason' - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month') then
-      raise exception 'approved expenses cannot be edited; reverse instead';
-    end if;
-    if old.status in ('pending', 'changes_requested') and new.status = 'reversed' then
-      raise exception 'only approved expenses can be reversed; reject it instead';
-    end if;
-    if new.submitted_by <> old.submitted_by or new.created_at <> old.created_at then
-      raise exception 'submitter and created time are fixed';
-    end if;
-  end if;
-
-  -- Submission checks apply when an expense is created or (re)submitted, not to
-  -- later bookkeeping updates (e.g. Odoo sync flags on an approved row).
-  if new.status = 'pending' then
-    select * into v_wallet from public.wallets where id = new.wallet_id;
-    if not v_wallet.active then
-      raise exception 'wallet % is inactive', v_wallet.name;
-    end if;
-    select * into v_category from public.categories where id = new.category_id;
-    if v_category.receipt_required and new.amount > v_threshold and coalesce(new.invoice_path, '') = '' then
-      raise exception 'an invoice photo is required for expenses above % SAR', v_threshold using errcode = 'P0001';
-    end if;
-    if not v_category.receipt_required and coalesce(trim(new.description), '') = '' then
-      raise exception 'remarks are required for % (no receipt), e.g. which project and who was paid', v_category.name using errcode = 'P0001';
-    end if;
-    if not exists (select 1 from public.projects where id = new.project_id and active) and (tg_op = 'INSERT' or new.project_id <> old.project_id) then
+    if not exists (select 1 from public.projects where id = new.project_id and active) then
       raise exception 'project is inactive';
     end if;
+  else
+    v_content_old := to_jsonb(old) - 'status' - 'checked_by' - 'checked_at' - 'check_note' - 'reversed_by' - 'reversed_at'
+                     - 'reversal_reason' - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month';
+    if old.status = 'reversed' and (to_jsonb(new) - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month')
+                                <> (to_jsonb(old) - 'odoo_sync' - 'odoo_bill_id' - 'updated_at' - 'period_month') then
+      raise exception 'expense % is reversed, it is read only', old.external_id;
+    end if;
+    if new.submitted_by <> old.submitted_by or new.created_at <> old.created_at or new.client_id is distinct from old.client_id then
+      raise exception 'submitter and created time are fixed';
+    end if;
+    if v_content_new = v_content_old then
+      return new;   -- bookkeeping only (check mark, reversal, month, Odoo flags)
+    end if;
+    if old.checked_by is not null and not public.is_admin() then
+      raise exception 'this expense has been checked by accounts; ask finance to correct it';
+    end if;
+    if new.wallet_id <> old.wallet_id and not exists (select 1 from public.wallets where id = new.wallet_id and active) then
+      raise exception 'this card or cash float is inactive';
+    end if;
+  end if;
+
+  select * into v_category from public.categories where id = new.category_id;
+  if v_category.receipt_required and new.amount > v_threshold and coalesce(new.invoice_path, '') = '' then
+    raise exception 'a bill photo is required for expenses above % SAR', v_threshold using errcode = 'P0001';
+  end if;
+  if not v_category.receipt_required and coalesce(trim(new.description), '') = '' then
+    raise exception 'remarks are required for % (no bill), e.g. which project and who was paid', v_category.name using errcode = 'P0001';
   end if;
   return new;
 end $$;
 create trigger guard_expense before insert or update on public.expenses for each row execute function public.guard_expense();
 
--- Log every status change into expense_events.
-create or replace function public.log_expense_status()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if tg_op = 'INSERT' then
-    insert into public.expense_events (expense_id, from_status, to_status, actor_id)
-    values (new.id, null, new.status, auth.uid());
-  elsif new.status is distinct from old.status then
-    insert into public.expense_events (expense_id, from_status, to_status, note, actor_id)
-    values (new.id, old.status, new.status,
-            case when new.status = 'reversed' then new.reversal_reason else new.review_note end,
-            auth.uid());
-  end if;
-  return new;
-end $$;
-create trigger log_expense_status after insert or update on public.expenses for each row execute function public.log_expense_status();
-
 -- ---------------------------------------------------------------------------
--- Who can approve what
+-- RPCs
 -- ---------------------------------------------------------------------------
-create or replace function public.can_approve(p_expense public.expenses)
-returns boolean
-language sql stable security definer set search_path = public
-as $$
-  select public.is_admin()
-      or (
-        public.current_role_name() = 'accounts' and public.current_can_review()
-        and p_expense.submitted_by <> auth.uid()
-      )
-      or (
-        public.current_role_name() = 'approver'
-        and exists (select 1 from public.projects p where p.id = p_expense.project_id and p.approver_id = auth.uid())
-        and p_expense.submitted_by <> auth.uid()      -- nobody approves their own spend
-      )
-$$;
-
--- ---------------------------------------------------------------------------
--- Workflow RPCs (the only way status changes from the apps)
--- ---------------------------------------------------------------------------
-create or replace function public.review_expense(p_id uuid, p_decision text, p_note text default null)
+-- Accounts / audit tick an entry as checked (or untick it).
+create or replace function public.set_checked(p_id uuid, p_checked boolean, p_note text default null)
 returns public.expenses
 language plpgsql security definer set search_path = public
 as $$
-declare
-  e public.expenses;
+declare e public.expenses;
 begin
-  select * into e from public.expenses where id = p_id for update;
-  if not found then raise exception 'expense not found'; end if;
-  if not public.can_approve(e) then raise exception 'not allowed to review this expense' using errcode = '42501'; end if;
-  if e.status <> 'pending' then raise exception 'only pending expenses can be reviewed (this one is %)', e.status; end if;
-  if p_decision not in ('approve', 'reject', 'request_changes') then raise exception 'unknown decision %', p_decision; end if;
-  if p_decision in ('reject', 'request_changes') and coalesce(trim(p_note), '') = '' then
-    raise exception 'a reason is required';
-  end if;
-
+  if not public.sees_everything() then raise exception 'only accounts and finance can check entries' using errcode = '42501'; end if;
   update public.expenses set
-    status = case p_decision when 'approve' then 'approved'::public.expense_status
-                             when 'reject' then 'rejected'::public.expense_status
-                             else 'changes_requested'::public.expense_status end,
-    review_note = nullif(trim(p_note), ''),
-    reviewed_by = auth.uid(),
-    reviewed_at = now()
+    checked_by = case when p_checked then auth.uid() end,
+    checked_at = case when p_checked then now() end,
+    check_note = nullif(trim(p_note), '')
   where id = p_id
   returning * into e;
+  if not found then raise exception 'expense not found'; end if;
   return e;
 end $$;
 
@@ -567,9 +480,9 @@ begin
   if not public.is_admin() then raise exception 'only finance admins can reverse' using errcode = '42501'; end if;
   if coalesce(trim(p_reason), '') = '' then raise exception 'a reason is required'; end if;
   update public.expenses set status = 'reversed', reversed_by = auth.uid(), reversed_at = now(), reversal_reason = trim(p_reason)
-  where id = p_id and status = 'approved'
+  where id = p_id and status = 'recorded'
   returning * into e;
-  if not found then raise exception 'only approved expenses can be reversed'; end if;
+  if not found then raise exception 'expense not found or already reversed'; end if;
   return e;
 end $$;
 
@@ -588,39 +501,6 @@ begin
   return t;
 end $$;
 
--- The submitter edits and resubmits after "changes requested".
-create or replace function public.resubmit_expense(
-  p_id uuid,
-  p_amount numeric,
-  p_vat_amount numeric,
-  p_project_id uuid,
-  p_category_id uuid,
-  p_expense_date date,
-  p_vendor text,
-  p_vendor_vat_number text,
-  p_invoice_number text,
-  p_description text,
-  p_invoice_path text
-)
-returns public.expenses
-language plpgsql security definer set search_path = public
-as $$
-declare e public.expenses;
-begin
-  select * into e from public.expenses where id = p_id for update;
-  if not found or e.submitted_by <> auth.uid() then raise exception 'expense not found'; end if;
-  if e.status <> 'changes_requested' then raise exception 'only expenses with changes requested can be resubmitted'; end if;
-  update public.expenses set
-    amount = p_amount, vat_amount = coalesce(p_vat_amount, 0), project_id = p_project_id, category_id = p_category_id,
-    expense_date = p_expense_date, vendor = coalesce(p_vendor, ''), vendor_vat_number = nullif(p_vendor_vat_number, ''),
-    invoice_number = nullif(p_invoice_number, ''), description = p_description,
-    invoice_path = coalesce(nullif(p_invoice_path, ''), invoice_path),
-    status = 'pending', review_note = null, reviewed_by = null, reviewed_at = null
-  where id = p_id
-  returning * into e;
-  return e;
-end $$;
-
 -- ---------------------------------------------------------------------------
 -- Balances and reporting (security_invoker: callers only see what RLS allows)
 -- ---------------------------------------------------------------------------
@@ -629,30 +509,28 @@ select
   w.id as wallet_id,
   w.external_id,
   w.name,
-  w.kind,
   w.card_last4,
   w.custodian_id,
   p.full_name as custodian_name,
   w.active,
   w.opening_balance,
-  coalesce(t.total, 0)::numeric(14,2)                              as topups_total,
-  coalesce(e.approved, 0)::numeric(14,2)                           as approved_total,
-  coalesce(e.pending, 0)::numeric(14,2)                            as pending_total,
-  coalesce(e.rejected, 0)::numeric(14,2)                           as rejected_total,
-  -- the balance the app shows, and what the bank statement should match.
-  -- Money that was spent has left the card or float whatever its review status;
-  -- approval is for accounts and audit. Only a reversal (e.g. vendor refund) gives it back.
-  (w.opening_balance + coalesce(t.total, 0) - coalesce(e.approved, 0) - coalesce(e.pending, 0) - coalesce(e.rejected, 0))::numeric(14,2) as available_balance
+  coalesce(t.total, 0)::numeric(14,2)  as topups_total,
+  coalesce(e.spent, 0)::numeric(14,2)  as spent_total,
+  coalesce(e.spent_card, 0)::numeric(14,2) as spent_card,
+  coalesce(e.spent_cash, 0)::numeric(14,2) as spent_cash,
+  coalesce(e.unchecked, 0)::integer    as unchecked_count,
+  -- the balance the app shows, and what the bank statement should match
+  (w.opening_balance + coalesce(t.total, 0) - coalesce(e.spent, 0))::numeric(14,2) as available_balance
 from public.wallets w
 left join public.profiles p on p.id = w.custodian_id
 left join lateral (
   select sum(amount) as total from public.topups where wallet_id = w.id and status = 'posted'
 ) t on true
 left join lateral (
-  select
-    sum(amount) filter (where status = 'approved') as approved,
-    sum(amount) filter (where status in ('pending', 'changes_requested')) as pending,
-    sum(amount) filter (where status = 'rejected') as rejected
+  select sum(amount) filter (where status = 'recorded') as spent,
+         sum(amount) filter (where status = 'recorded' and paid_by = 'card') as spent_card,
+         sum(amount) filter (where status = 'recorded' and paid_by = 'cash') as spent_cash,
+         count(*) filter (where status = 'recorded' and checked_by is null) as unchecked
   from public.expenses where wallet_id = w.id
 ) e on true;
 
@@ -663,6 +541,7 @@ select
   t.id, t.external_id, t.wallet_id, null::uuid as project_id, null::uuid as category_id,
   t.created_by       as person_id,
   t.transfer_date    as entry_date,
+  t.period_month,
   coalesce(t.reference, t.method) as description,
   t.amount           as amount_in,
   0::numeric(14,2)   as amount_out,
@@ -673,18 +552,19 @@ from public.topups t
 union all
 select
   'expense', e.id, e.external_id, e.wallet_id, e.project_id, e.category_id,
-  e.submitted_by, e.expense_date,
-  nullif(concat_ws(' - ', nullif(e.vendor, ''), e.description), ''),
+  e.submitted_by, e.expense_date, e.period_month,
+  nullif(concat_ws(' - ', e.paid_by::text, nullif(e.vendor, ''), e.description), ''),
   0, e.amount, e.vat_amount, e.status::text, e.created_at
 from public.expenses e;
 
--- Dashboard totals for a period and optional filters.
+-- Dashboard totals for a period month (or date range) and optional filters.
 create or replace function public.dashboard_summary(
   p_from date default null,
   p_to date default null,
   p_wallet_id uuid default null,
   p_project_id uuid default null,
-  p_custodian_id uuid default null
+  p_custodian_id uuid default null,
+  p_month date default null
 )
 returns jsonb
 language sql stable security invoker set search_path = public
@@ -699,30 +579,32 @@ as $$
     from public.topups
     where status = 'posted' and wallet_id in (select id from w)
       and p_project_id is null
+      and (p_month is null or period_month = p_month)
       and (p_from is null or transfer_date >= p_from)
       and (p_to is null or transfer_date <= p_to)
   ),
   e as (
     select
-      coalesce(sum(amount) filter (where status = 'approved'), 0) as approved,
-      coalesce(sum(amount) filter (where status in ('pending', 'changes_requested')), 0) as pending,
-      coalesce(sum(amount) filter (where status = 'rejected'), 0) as rejected,
-      coalesce(sum(vat_amount) filter (where status = 'approved'), 0) as approved_vat,
-      count(*) filter (where status = 'approved') as approved_n,
-      count(*) filter (where status in ('pending', 'changes_requested')) as pending_n
+      coalesce(sum(amount), 0) as spent,
+      coalesce(sum(amount) filter (where paid_by = 'card'), 0) as spent_card,
+      coalesce(sum(amount) filter (where paid_by = 'cash'), 0) as spent_cash,
+      coalesce(sum(vat_amount), 0) as vat,
+      count(*) as n,
+      count(*) filter (where checked_by is null) as unchecked_n,
+      coalesce(sum(amount) filter (where checked_by is null), 0) as unchecked
     from public.expenses
-    where wallet_id in (select id from w)
+    where status = 'recorded' and wallet_id in (select id from w)
       and (p_project_id is null or project_id = p_project_id)
+      and (p_month is null or period_month = p_month)
       and (p_from is null or expense_date >= p_from)
       and (p_to is null or expense_date <= p_to)
   )
   select jsonb_build_object(
     'topups_total', t.total, 'topups_count', t.n,
-    'approved_total', e.approved, 'approved_count', e.approved_n, 'approved_vat', e.approved_vat,
-    'pending_total', e.pending, 'pending_count', e.pending_n,
-    'rejected_total', e.rejected,
-    'disbursed_total', e.approved + e.pending + e.rejected,
-    'net_movement', t.total - e.approved - e.pending - e.rejected
+    'spent_total', e.spent, 'spent_count', e.n, 'spent_vat', e.vat,
+    'spent_card', e.spent_card, 'spent_cash', e.spent_cash,
+    'unchecked_total', e.unchecked, 'unchecked_count', e.unchecked_n,
+    'net_movement', t.total - e.spent
   )
   from t, e
 $$;
@@ -733,9 +615,10 @@ create or replace function public.spend_breakdown(
   p_from date default null,
   p_to date default null,
   p_wallet_id uuid default null,
-  p_project_id uuid default null
+  p_project_id uuid default null,
+  p_month date default null
 )
-returns table (key text, label text, approved numeric, pending numeric, expense_count bigint)
+returns table (key text, label text, spent numeric, expense_count bigint)
 language sql stable security invoker set search_path = public
 as $$
   select
@@ -744,22 +627,22 @@ as $$
       when 'wallet' then w.id::text when 'custodian' then pf.id::text
       else to_char(e.period_month, 'YYYY-MM') end as key,
     case p_group
-      when 'project' then pr.code || ' ' || pr.name when 'category' then c.name
+      when 'project' then pr.name when 'category' then c.name
       when 'wallet' then w.name when 'custodian' then pf.full_name
       else to_char(e.period_month, 'YYYY-MM') end as label,
-    coalesce(sum(e.amount) filter (where e.status = 'approved'), 0)::numeric(14,2),
-    coalesce(sum(e.amount) filter (where e.status in ('pending', 'changes_requested')), 0)::numeric(14,2),
-    count(*) filter (where e.status in ('approved', 'pending', 'changes_requested'))
+    sum(e.amount)::numeric(14,2),
+    count(*)
   from public.expenses e
   join public.projects pr on pr.id = e.project_id
   join public.categories c on c.id = e.category_id
   join public.wallets w on w.id = e.wallet_id
   join public.profiles pf on pf.id = e.submitted_by
-  where (p_wallet_id is null or e.wallet_id = p_wallet_id)
+  where e.status = 'recorded'
+    and (p_wallet_id is null or e.wallet_id = p_wallet_id)
     and (p_project_id is null or e.project_id = p_project_id)
+    and (p_month is null or e.period_month = p_month)
     and (p_from is null or e.expense_date >= p_from)
     and (p_to is null or e.expense_date <= p_to)
-    and e.status in ('approved', 'pending', 'changes_requested')
   group by 1, 2
   order by 3 desc, 2
 $$;
@@ -772,18 +655,17 @@ returns public.statement_checks
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_in numeric; v_out numeric; v_pending numeric; r public.statement_checks;
+  v_balance numeric; r public.statement_checks;
 begin
   if not public.is_admin() then raise exception 'only finance admins can reconcile' using errcode = '42501'; end if;
-  select coalesce(sum(amount), 0) + (select opening_balance from public.wallets where id = p_wallet_id) into v_in from public.topups
-   where wallet_id = p_wallet_id and status = 'posted' and transfer_date <= p_statement_date;
-  -- spent money counts whatever its review status; only reversals are excluded
-  select coalesce(sum(amount) filter (where status in ('approved', 'rejected')), 0),
-         coalesce(sum(amount) filter (where status in ('pending', 'changes_requested')), 0)
-    into v_out, v_pending
-    from public.expenses where wallet_id = p_wallet_id and expense_date <= p_statement_date;
-  insert into public.statement_checks (wallet_id, statement_date, statement_balance, calculated_balance, pending_amount, notes)
-  values (p_wallet_id, p_statement_date, p_statement_balance, v_in - v_out - v_pending, v_pending, p_notes)
+  select w.opening_balance
+       + coalesce((select sum(amount) from public.topups where wallet_id = w.id and status = 'posted' and transfer_date <= p_statement_date), 0)
+       - coalesce((select sum(amount) from public.expenses where wallet_id = w.id and status = 'recorded' and expense_date <= p_statement_date), 0)
+    into v_balance
+    from public.wallets w where w.id = p_wallet_id;
+  if v_balance is null then raise exception 'wallet not found'; end if;
+  insert into public.statement_checks (wallet_id, statement_date, statement_balance, calculated_balance, notes)
+  values (p_wallet_id, p_statement_date, p_statement_balance, v_balance, p_notes)
   returning * into r;
   return r;
 end $$;
@@ -798,7 +680,7 @@ returns text
 language sql stable security definer set search_path = public
 as $$
   select md5(
-    coalesce((select string_agg(concat_ws('|', id, status, amount, vat_amount, project_id, category_id, wallet_id, invoice_path, updated_at), ',' order by id)
+    coalesce((select string_agg(concat_ws('|', id, status, amount, vat_amount, paid_by, project_id, category_id, wallet_id, invoice_path, description, updated_at), ',' order by id)
                 from public.expenses where period_month = p_month), '')
     || '#' ||
     coalesce((select string_agg(concat_ws('|', id, status, amount, wallet_id, attachment_path), ',' order by id)
@@ -806,9 +688,9 @@ as $$
   )
 $$;
 
--- One row per open month (with data, or the current month), for the Close month page.
+-- One row per month that has data (plus the current month), for the Close month page.
 create or replace function public.month_overview()
-returns table (month date, expense_count bigint, expense_total numeric, open_count bigint, topup_count bigint, topup_total numeric,
+returns table (month date, expense_count bigint, expense_total numeric, unchecked_count bigint, topup_count bigint, topup_total numeric,
                file_count bigint, exported_at timestamptz, export_current boolean, accepts_entries boolean)
 language sql stable security definer set search_path = public
 as $$
@@ -820,17 +702,18 @@ as $$
   select
     m.m,
     (select count(*) from public.expenses e where e.period_month = m.m),
-    (select coalesce(sum(amount), 0) from public.expenses e where e.period_month = m.m and status <> 'reversed'),
-    (select count(*) from public.expenses e where e.period_month = m.m and status in ('pending', 'changes_requested')),
+    (select coalesce(sum(amount), 0) from public.expenses e where e.period_month = m.m and status = 'recorded'),
+    (select count(*) from public.expenses e where e.period_month = m.m and status = 'recorded' and checked_by is null),
     (select count(*) from public.topups t where t.period_month = m.m),
     (select coalesce(sum(amount), 0) from public.topups t where t.period_month = m.m and status = 'posted'),
-    (select count(invoice_path) from public.expenses e where e.period_month = m.m) + (select count(attachment_path) from public.topups t where t.period_month = m.m),
+    (select count(nullif(invoice_path, '')) from public.expenses e where e.period_month = m.m)
+      + (select count(nullif(attachment_path, '')) from public.topups t where t.period_month = m.m),
     x.exported_at,
     coalesce(x.fingerprint = public.month_fingerprint(m.m), false),
     m.m >= public.open_month_from()
   from months m
   left join lateral (select exported_at, fingerprint from public.month_exports where month = m.m order by exported_at desc limit 1) x on true
-  where public.is_admin()
+  where public.sees_everything()
   order by m.m desc
 $$;
 
@@ -841,7 +724,7 @@ language plpgsql security definer set search_path = public
 as $$
 declare r public.month_exports; v_month date := date_trunc('month', p_month)::date;
 begin
-  if not public.is_admin() then raise exception 'only finance admins can export a month' using errcode = '42501'; end if;
+  if not public.sees_everything() then raise exception 'only accounts and finance can export a month' using errcode = '42501'; end if;
   insert into public.month_exports (month, fingerprint, expense_count, file_count)
   values (v_month, public.month_fingerprint(v_month), (select count(*) from public.expenses where period_month = v_month), coalesce(p_file_count, 0))
   returning * into r;
@@ -849,8 +732,8 @@ begin
 end $$;
 
 -- Erase a month. Requires: admin, typed confirmation "YYYY-MM", a month before the
--- current one, no older month still open, nothing waiting for review, and an export
--- taken after the last change. Carries each wallet's net movement for the month into
+-- current one, no older month still holding data, and an export taken after the
+-- last change. Carries each wallet's net movement for the month into
 -- wallets.opening_balance, so balances (and the bank reconciliation) are unchanged.
 -- Returns the closed_months row; files_pending lists the storage files for the app to remove.
 create or replace function public.close_month(p_month date, p_confirm text)
@@ -876,15 +759,12 @@ begin
   if exists (select 1 from public.closed_months where month = v_month) then
     raise exception 'month % is already closed', to_char(v_month, 'YYYY-MM');
   end if;
-  if exists (select 1 from public.expenses where period_month < v_month) or exists (select 1 from public.topups where period_month < v_month) then
-    raise exception 'close the older months first';
-  end if;
 
-  -- stop new entries and edits in this month while we work
+  -- stop new entries and edits while we work
   lock table public.expenses, public.topups in share row exclusive mode;
 
-  if exists (select 1 from public.expenses where period_month = v_month and status in ('pending', 'changes_requested')) then
-    raise exception 'month % still has expenses waiting for review', to_char(v_month, 'YYYY-MM');
+  if exists (select 1 from public.expenses where period_month < v_month) or exists (select 1 from public.topups where period_month < v_month) then
+    raise exception 'close the older months first';
   end if;
   if not coalesce((select fingerprint = public.month_fingerprint(v_month) from public.month_exports
                     where month = v_month order by exported_at desc limit 1), false) then
@@ -903,7 +783,7 @@ begin
       select wallet_id, sum(amount) as net from (
         select wallet_id, amount from public.topups where period_month = v_month and status = 'posted'
         union all
-        select wallet_id, -amount from public.expenses where period_month = v_month and status <> 'reversed'
+        select wallet_id, -amount from public.expenses where period_month = v_month and status = 'recorded'
       ) m group by wallet_id
     ) n join public.wallets w on w.id = n.wallet_id;
 
@@ -915,14 +795,13 @@ begin
   values (
     v_month,
     cardinality(v_expense_ids),
-    (select coalesce(sum(amount), 0) from public.expenses where period_month = v_month and status <> 'reversed'),
+    (select coalesce(sum(amount), 0) from public.expenses where period_month = v_month and status = 'recorded'),
     cardinality(v_topup_ids),
     (select coalesce(sum(amount), 0) from public.topups where period_month = v_month and status = 'posted'),
     v_carried, v_files, auth.uid()
   ) returning * into r;
 
   perform set_config('kutti.closing', 'on', true);
-  delete from public.expense_events where expense_id = any (v_expense_ids);
   delete from public.expenses where id = any (v_expense_ids);
   delete from public.topups where id = any (v_topup_ids);
   -- the per-row history would otherwise keep the erased data; the closed_months row
@@ -932,24 +811,6 @@ begin
   delete from public.month_exports where month = v_month;
   perform set_config('kutti.closing', 'off', true);
   return r;
-end $$;
-
--- Finance moves an expense or top-up to another open month (e.g. a late bill that
--- belongs to last month). Submitters can change it themselves while pending.
-create or replace function public.move_to_month(p_kind text, p_id uuid, p_month date)
-returns void
-language plpgsql security definer set search_path = public
-as $$
-begin
-  if not public.is_admin() then raise exception 'only finance admins can move entries between months' using errcode = '42501'; end if;
-  if p_kind = 'expense' then
-    update public.expenses set period_month = p_month where id = p_id;
-  elsif p_kind = 'topup' then
-    update public.topups set period_month = p_month where id = p_id;
-  else
-    raise exception 'unknown kind %', p_kind;
-  end if;
-  if not found then raise exception '% not found', p_kind; end if;
 end $$;
 
 -- The app reports which storage files it has removed after a close.
@@ -971,7 +832,7 @@ create or replace function public.storage_usage()
 returns jsonb
 language sql stable security definer set search_path = public, storage
 as $$
-  select case when public.is_admin() then jsonb_build_object(
+  select case when public.sees_everything() then jsonb_build_object(
     'used_bytes', coalesce((select sum((metadata ->> 'size')::bigint) from storage.objects where bucket_id in ('invoices', 'attachments')), 0),
     'file_count', (select count(*) from storage.objects where bucket_id in ('invoices', 'attachments')),
     'limit_bytes', (public.setting_numeric('storage_limit_mb', 1000) * 1024 * 1024)::bigint
@@ -988,22 +849,21 @@ alter table public.categories        enable row level security;
 alter table public.settings          enable row level security;
 alter table public.topups            enable row level security;
 alter table public.expenses          enable row level security;
-alter table public.expense_events    enable row level security;
 alter table public.statement_checks  enable row level security;
-alter table public.audit_log         enable row level security;
 alter table public.month_exports     enable row level security;
 alter table public.closed_months     enable row level security;
+alter table public.audit_log         enable row level security;
 
 -- profiles: everyone signed in can read names; you edit your own name/locale; admins manage roles.
 create policy profiles_read on public.profiles for select to authenticated using (true);
 create policy profiles_admin_write on public.profiles for update to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy profiles_self_update on public.profiles for update to authenticated
   using (id = auth.uid())
-  with check (id = auth.uid() and role = public.current_role_name() and can_review = public.current_can_review() and active);
+  with check (id = auth.uid() and role = public.current_role_name() and active);
 
--- master data: read for all signed-in users, write for admins.
+-- master data: wallets are private to their custodian; the rest is readable by all signed-in users. Admins write.
 create policy wallets_read on public.wallets for select to authenticated
-  using (public.is_staff() or custodian_id = auth.uid());
+  using (public.sees_everything() or custodian_id = auth.uid());
 create policy wallets_admin on public.wallets for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 create policy projects_read on public.projects for select to authenticated using (true);
@@ -1015,9 +875,9 @@ create policy categories_admin on public.categories for all to authenticated usi
 create policy settings_read on public.settings for select to authenticated using (true);
 create policy settings_admin on public.settings for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
--- top-ups: custodians see their own wallets; admins/approvers see all; admins insert.
+-- top-ups: custodians see their own wallets; admins/accounts see all; admins insert.
 create policy topups_read on public.topups for select to authenticated
-  using (public.is_staff() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid()));
+  using (public.sees_everything() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid()));
 create policy topups_admin_insert on public.topups for insert to authenticated
   with check (public.is_admin() and status = 'posted' and created_by = auth.uid());
 create policy topups_admin_update on public.topups for update to authenticated
@@ -1029,52 +889,41 @@ create policy expenses_read on public.expenses for select to authenticated
     public.sees_everything()
     or submitted_by = auth.uid()
     or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid())
-    or exists (select 1 from public.projects p where p.id = project_id and p.approver_id = auth.uid())
   );
--- A custodian submits against a wallet they hold. Admins can submit on anyone's wallet.
+-- Staff record spend on a card or float they hold. Admins can record on anyone's.
 create policy expenses_insert on public.expenses for insert to authenticated
   with check (
     submitted_by = auth.uid()
-    and status = 'pending'
-    and (public.is_admin() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid() and w.active))
+    and (public.is_admin() or exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid()))
   );
--- Direct updates: the submitter may fix a pending expense (e.g. attach the invoice) before review.
+-- Staff correct their own entry until it's checked (the guard trigger enforces the rest).
 create policy expenses_owner_update on public.expenses for update to authenticated
-  using (submitted_by = auth.uid() and status = 'pending')
-  with check (submitted_by = auth.uid() and status = 'pending' and reviewed_by is null);
+  using (submitted_by = auth.uid() and status = 'recorded' and checked_by is null)
+  with check (submitted_by = auth.uid() and status = 'recorded' and checked_by is null
+              and exists (select 1 from public.wallets w where w.id = wallet_id and w.custodian_id = auth.uid()));
+-- Finance corrects anything (e.g. moves an entry to another month).
+create policy expenses_admin_update on public.expenses for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
 
-create policy expense_events_read on public.expense_events for select to authenticated
-  using (exists (select 1 from public.expenses e where e.id = expense_id));  -- inherits expenses RLS
-
-create policy statement_checks_admin_read on public.statement_checks for select to authenticated using (public.is_staff());
-
-create policy audit_admin_read on public.audit_log for select to authenticated using (public.sees_everything());
-create policy month_exports_admin_read on public.month_exports for select to authenticated using (public.is_admin());
-create policy closed_months_staff_read on public.closed_months for select to authenticated using (public.is_staff());
+create policy statement_checks_read on public.statement_checks for select to authenticated using (public.sees_everything());
+create policy month_exports_read on public.month_exports for select to authenticated using (public.sees_everything());
+create policy closed_months_read on public.closed_months for select to authenticated using (public.sees_everything());
+create policy audit_read on public.audit_log for select to authenticated using (public.sees_everything());
 
 -- Only expose RPCs to signed-in users.
-revoke execute on function public.review_expense(uuid, text, text) from public, anon;
-revoke execute on function public.reverse_expense(uuid, text) from public, anon;
-revoke execute on function public.reverse_topup(uuid, text) from public, anon;
-revoke execute on function public.resubmit_expense(uuid, numeric, numeric, uuid, uuid, date, text, text, text, text, text) from public, anon;
-revoke execute on function public.record_statement_check(uuid, date, numeric, text) from public, anon;
-grant execute on function public.review_expense(uuid, text, text) to authenticated;
-grant execute on function public.reverse_expense(uuid, text) to authenticated;
-grant execute on function public.reverse_topup(uuid, text) to authenticated;
-grant execute on function public.resubmit_expense(uuid, numeric, numeric, uuid, uuid, date, text, text, text, text, text) to authenticated;
-grant execute on function public.record_statement_check(uuid, date, numeric, text) to authenticated;
-revoke execute on function public.month_overview() from public, anon;
-revoke execute on function public.record_month_export(date, integer) from public, anon;
-revoke execute on function public.close_month(date, text) from public, anon;
-revoke execute on function public.mark_files_removed(date, text[]) from public, anon;
-revoke execute on function public.storage_usage() from public, anon;
-revoke execute on function public.move_to_month(text, uuid, date) from public, anon;
-grant execute on function public.move_to_month(text, uuid, date) to authenticated;
-grant execute on function public.month_overview() to authenticated;
-grant execute on function public.record_month_export(date, integer) to authenticated;
-grant execute on function public.close_month(date, text) to authenticated;
-grant execute on function public.mark_files_removed(date, text[]) to authenticated;
-grant execute on function public.storage_usage() to authenticated;
+do $$
+declare f text;
+begin
+  foreach f in array array[
+    'set_checked(uuid, boolean, text)', 'reverse_expense(uuid, text)', 'reverse_topup(uuid, text)',
+    'record_statement_check(uuid, date, numeric, text)', 'dashboard_summary(date, date, uuid, uuid, uuid, date)',
+    'spend_breakdown(text, date, date, uuid, uuid, date)', 'month_fingerprint(date)', 'month_overview()',
+    'record_month_export(date, integer)', 'close_month(date, text)', 'mark_files_removed(date, text[])', 'storage_usage()'
+  ] loop
+    execute format('revoke execute on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end $$;
 
 -- Live updates: the web app listens for new and changed entries (Supabase Realtime;
 -- RLS still decides who receives what).
@@ -1085,7 +934,7 @@ do $$ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Storage: invoice photos and top-up proofs (private buckets)
+-- Storage: bill photos and top-up proofs (private buckets)
 -- Path convention: <auth uid>/<yyyy>/<uuid>.jpg
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public) values ('invoices', 'invoices', false) on conflict (id) do nothing;
@@ -1097,14 +946,14 @@ create policy invoices_read on storage.objects for select to authenticated
   using (
     bucket_id = 'invoices' and (
       (storage.foldername(name))[1] = auth.uid()::text
-      or public.is_staff()
+      or public.sees_everything()
     )
   );
+-- Close month removes the month's files through the Storage API.
+create policy invoices_admin_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'invoices' and public.is_admin());
 create policy attachments_admin on storage.objects for all to authenticated
   using (bucket_id = 'attachments' and public.is_admin())
   with check (bucket_id = 'attachments' and public.is_admin());
 create policy attachments_read on storage.objects for select to authenticated
-  using (bucket_id = 'attachments' and public.is_staff());
--- Close month removes the month's invoice files through the Storage API.
-create policy invoices_admin_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'invoices' and public.is_admin());
+  using (bucket_id = 'attachments' and public.sees_everything());

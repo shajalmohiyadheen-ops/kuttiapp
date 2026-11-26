@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { formatSar, fromDb, type ExpenseStatus, type TopupStatus } from "@kuttiapp/shared";
+import { useEffect, useRef, useState } from "react";
+import { formatSar, fromDb, monthLabel, openMonths, type ExpenseStatus, type TopupStatus } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
+import { subscribeLive } from "@/lib/supabase";
 
 /** SAR amount. direction "in" = money coming in (green, +), "out" = money going out (red, −). */
 export function Money({ value, direction }: { value: number | string | null | undefined; direction?: "in" | "out" }) {
-  const { locale } = useApp();
   const n = fromDb(value);
   const cls = n === 0 ? undefined : direction === "in" ? "money-in" : direction === "out" ? "money-out" : n < 0 ? "neg" : undefined;
   const sign = n !== 0 && direction === "in" ? "+" : n !== 0 && direction === "out" ? "−" : "";
   return (
     <span className={cls}>
       {sign}
-      {formatSar(value, { locale })}
+      {formatSar(value)}
     </span>
   );
 }
@@ -110,6 +110,32 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): { data: T | u
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
   return { data, error, loading, reload: () => setTick((x) => x + 1) };
+}
+
+/** Re-runs `reload` when an expense or transfer changes anywhere (live updates). */
+export function useLive(reload: () => void) {
+  const ref = useRef(reload);
+  useEffect(() => {
+    ref.current = reload;
+  });
+  useEffect(() => subscribeLive(() => ref.current()), []);
+}
+
+export function MonthSelect({ value, onChange, allowAll }: { value: string; onChange: (v: string) => void; allowAll?: boolean }) {
+  const { setting } = useApp();
+  const months = openMonths(setting("retention_months", 5));
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {allowAll && <option value="">All open months</option>}
+      {months.map((m) => (
+        <option key={m} value={m}>{monthLabel(m)}</option>
+      ))}
+    </select>
+  );
+}
+
+export function PaidBy({ value }: { value: "card" | "cash" }) {
+  return <span className={`pill ${value}`}>{value === "card" ? "💳 Card" : "💵 Cash"}</span>;
 }
 
 export function today(): string {

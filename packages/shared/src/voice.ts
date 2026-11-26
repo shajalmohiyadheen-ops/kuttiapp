@@ -257,7 +257,7 @@ function labelScore(spoken: string[], label: string): number {
 
 export interface ProjectLike {
   id: string;
-  code: string;
+  code?: string | null;
   name: string;
   name_ar?: string | null;
 }
@@ -269,7 +269,12 @@ export function matchProjects<P extends ProjectLike>(spoken: string, projects: P
   return projects
     .map((p) => ({
       project: p,
-      score: Math.max(labelScore(st, p.code), labelScore(st, p.name), p.name_ar ? labelScore(st, p.name_ar) : 0, labelScore(st, `${p.code} ${p.name}`)),
+      score: Math.max(
+        p.code ? labelScore(st, p.code) : 0,
+        labelScore(st, p.name),
+        p.name_ar ? labelScore(st, p.name_ar) : 0,
+        p.code ? labelScore(st, `${p.code} ${p.name}`) : 0,
+      ),
     }))
     .filter((r) => r.score >= 0.5)
     .sort((a, b) => b.score - a.score)

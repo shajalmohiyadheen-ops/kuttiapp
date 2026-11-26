@@ -1,50 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { parseAmount, toDecimalString, sum, type Topup, type TopupMethod } from "@kuttiapp/shared";
+import { parseAmount, toDecimalString, sum, monthOf, monthLabel, type Topup, type TopupMethod } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must, signedUrl } from "@/lib/supabase";
 import { downloadXlsx } from "@/lib/export";
 import { RequireRole } from "@/components/shell";
-import { ErrorText, Field, Modal, Money, StatusBadge, monthStart, today, useAction, useLoad } from "@/components/ui";
+import { ErrorText, Field, Modal, Money, MonthSelect, StatusBadge, monthStart, today, useAction, useLive, useLoad } from "@/components/ui";
 
 const METHODS: TopupMethod[] = ["bank_transfer", "cash", "opening_balance", "custodian_repayment", "other"];
 
 export default function TopupsPage() {
   return (
-    <RequireRole roles={["admin"]}>
+    <RequireRole roles={["admin", "accounts"]}>
       <Topups />
     </RequireRole>
   );
 }
 
 function Topups() {
-  const { t, lookups, name } = useApp();
-  const [from, setFrom] = useState(monthStart());
-  const [to, setTo] = useState(today());
+  const { t, lookups, name, profile } = useApp();
+  const [month, setMonth] = useState(monthStart());
   const [walletId, setWalletId] = useState("");
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<Topup | null>(null);
 
   const list = useLoad(async () => {
     let q = supabase().from("topups").select("*").order("transfer_date", { ascending: false }).order("created_at", { ascending: false });
-    if (from) q = q.gte("transfer_date", from);
-    if (to) q = q.lte("transfer_date", to);
+    if (month) q = q.eq("period_month", month);
     if (walletId) q = q.eq("wallet_id", walletId);
     return must(await q) as Topup[];
-  }, [from, to, walletId]);
+  }, [month, walletId]);
+  useLive(list.reload);
   const rows = list.data ?? [];
 
   return (
     <>
       <h1>{t("topups")}</h1>
-      <p className="muted">Record every transfer into an Alinma card and every cash hand-over here. The wallet balance goes up as soon as you save.</p>
+      <p className="muted">Record every transfer from the main account into a staff member&apos;s card here. Their wallet balance goes up as soon as you save, and they see it on their phone.</p>
       <div className="toolbar">
-        <Field label={t("from")}>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </Field>
-        <Field label={t("to")}>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Field label={t("month")}>
+          <MonthSelect value={month} onChange={setMonth} allowAll />
         </Field>
         <Field label={t("wallet")}>
           <select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
@@ -57,11 +53,12 @@ function Topups() {
         <div className="grow" />
         <button
           onClick={() =>
-            downloadXlsx(`topups-${from}-to-${to}`, [
+            downloadXlsx(`transfers-${month || "all"}`, [
               {
-                name: "Top-ups",
+                name: "Transfers in",
                 columns: [
                   { header: "Date", key: "transfer_date", width: 12 },
+                  { header: "Month", key: "month", width: 9 },
                   { header: "ID", key: "external_id", width: 16 },
                   { header: "Wallet", key: "wallet", width: 24 },
                   { header: "Method", key: "method" },
@@ -70,14 +67,14 @@ function Topups() {
                   { header: "Status", key: "status" },
                   { header: "Reversal reason", key: "reversal_reason", width: 24 },
                 ],
-                rows: rows.map((r) => ({ ...r, wallet: name("wallets", r.wallet_id) })),
+                rows: rows.map((r) => ({ ...r, month: r.period_month.slice(0, 7), wallet: name("wallets", r.wallet_id) })),
               },
             ])
           }
         >
           {t("exportExcel")}
         </button>
-        <button className="primary" onClick={() => setCreating(true)}>{t("add")}</button>
+        {profile?.role === "admin" && <button className="primary" onClick={() => setCreating(true)}>{t("add")}</button>}
       </div>
       <ErrorText error={list.error} />
       <p className="muted small">
@@ -99,7 +96,10 @@ function Topups() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => setOpen(r)}>
-                <td style={{ whiteSpace: "nowrap" }}>{r.transfer_date}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {r.transfer_date}
+                  {monthOf(r.transfer_date) !== r.period_month && <div className="small muted">for {monthLabel(r.period_month)}</div>}
+                </td>
                 <td className="small muted">{r.external_id}</td>
                 <td>{name("wallets", r.wallet_id)}</td>
                 <td>{t(r.method === "cash" ? "cash" : r.method)}</td>
@@ -123,7 +123,7 @@ function Topups() {
 function NewTopup({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { t, lookups, profile } = useApp();
   const wallets = lookups.wallets.filter((w) => w.active);
-  const [f, setF] = useState({ wallet_id: wallets[0]?.id ?? "", amount: "", transfer_date: today(), method: "bank_transfer" as TopupMethod, reference: "", notes: "" });
+  const [f, setF] = useState({ wallet_id: wallets[0]?.id ?? "", amount: "", transfer_date: today(), period_month: monthOf(today()), method: "bank_transfer" as TopupMethod, reference: "", notes: "" });
   const [file, setFile] = useState<File | null>(null);
   const action = useAction();
 
@@ -144,6 +144,7 @@ function NewTopup({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
           wallet_id: f.wallet_id,
           amount: toDecimalString(h),
           transfer_date: f.transfer_date,
+          period_month: f.period_month,
           method: f.method,
           reference: f.reference.trim() || null,
           notes: f.notes.trim() || null,
@@ -169,7 +170,10 @@ function NewTopup({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
           <input inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
         </Field>
         <Field label={t("date")}>
-          <input type="date" value={f.transfer_date} onChange={(e) => setF({ ...f, transfer_date: e.target.value })} />
+          <input type="date" value={f.transfer_date} onChange={(e) => setF({ ...f, transfer_date: e.target.value, period_month: monthOf(e.target.value || today()) })} />
+        </Field>
+        <Field label={t("month")}>
+          <MonthSelect value={f.period_month} onChange={(v) => setF({ ...f, period_month: v })} />
         </Field>
         <Field label={t("method")}>
           <select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value as TopupMethod })}>
@@ -198,7 +202,7 @@ function NewTopup({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
 }
 
 function TopupDetail({ topup, onClose, onChanged }: { topup: Topup; onClose: () => void; onChanged: () => void }) {
-  const { t, name } = useApp();
+  const { t, name, profile } = useApp();
   const [reason, setReason] = useState("");
   const action = useAction();
   const file = useLoad(() => signedUrl("attachments", topup.attachment_path), [topup.attachment_path]);
@@ -213,6 +217,8 @@ function TopupDetail({ topup, onClose, onChanged }: { topup: Topup; onClose: () 
         <dd><Money value={topup.amount} direction="in" /></dd>
         <dt>{t("date")}</dt>
         <dd>{topup.transfer_date}</dd>
+        <dt>{t("month")}</dt>
+        <dd>{monthLabel(topup.period_month)}</dd>
         <dt>{t("reference")}</dt>
         <dd>{topup.reference || "—"}</dd>
         <dt>{t("notes")}</dt>
@@ -228,14 +234,14 @@ function TopupDetail({ topup, onClose, onChanged }: { topup: Topup; onClose: () 
           </>
         )}
       </dl>
-      {topup.status === "posted" && (
+      {topup.status === "posted" && profile?.role === "admin" && (
         <Field label={`${t("reason")} (${t("reverse")})`}>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       )}
       <ErrorText error={action.error} />
       <div className="actions">
-        {topup.status === "posted" && (
+        {topup.status === "posted" && profile?.role === "admin" && (
           <button
             className="danger"
             disabled={action.busy || !reason.trim()}

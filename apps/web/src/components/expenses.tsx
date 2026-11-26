@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { parseAmount, toDecimalString, vatFromInclusive, invoicePath, formatSar, type Expense, type ExpenseEvent, type ReviewDecision } from "@kuttiapp/shared";
+import { parseAmount, toDecimalString, vatFromInclusive, invoicePath, formatSar, monthLabel, monthOf, type Expense, type PaymentMethod } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
 import { supabase, must, signedUrl } from "@/lib/supabase";
-import { ErrorText, Field, Modal, Money, StatusBadge, fmtDateTime, today, useAction, useLoad } from "./ui";
+import { ErrorText, Field, Modal, Money, MonthSelect, PaidBy, StatusBadge, fmtDateTime, today, useAction, useLoad } from "./ui";
 
 export function ExpenseTable({ rows, onOpen }: { rows: Expense[]; onOpen: (e: Expense) => void }) {
   const { t, name } = useApp();
@@ -14,34 +14,38 @@ export function ExpenseTable({ rows, onOpen }: { rows: Expense[]; onOpen: (e: Ex
         <thead>
           <tr>
             <th>{t("date")}</th>
-            <th>ID</th>
             <th>{t("custodian")}</th>
-            <th>{t("wallet")}</th>
             <th>{t("project")}</th>
             <th>{t("category")}</th>
-            <th>{t("vendor")}</th>
+            <th>{t("paidBy")}</th>
+            <th>{t("vendor")} / {t("remarks")}</th>
             <th className="num">{t("amount")}</th>
             <th>{t("invoice")}</th>
-            <th>{t("status")}</th>
+            <th>{t("checked")}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((e) => (
-            <tr key={e.id} className="clickable" onClick={() => onOpen(e)}>
-              <td style={{ whiteSpace: "nowrap" }}>{e.expense_date}</td>
-              <td className="small muted">{e.external_id}</td>
+            <tr key={e.id} className={`clickable${e.status === "reversed" ? " struck" : ""}`} onClick={() => onOpen(e)}>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {e.expense_date}
+                {monthOf(e.expense_date) !== e.period_month && <div className="small muted">for {monthLabel(e.period_month)}</div>}
+              </td>
               <td>{name("profiles", e.submitted_by)}</td>
-              <td>{name("wallets", e.wallet_id)}</td>
               <td>{name("projects", e.project_id)}</td>
               <td>{name("categories", e.category_id)}</td>
-              <td>{e.vendor}</td>
+              <td><PaidBy value={e.paid_by} /></td>
+              <td>
+                {e.vendor}
+                {e.description && <div className="small muted">{e.description}</div>}
+              </td>
               <td className="num"><Money value={e.amount} direction="out" /></td>
               <td>{e.invoice_path ? "📎" : <span className="muted">—</span>}</td>
-              <td><StatusBadge status={e.status} /></td>
+              <td>{e.status === "reversed" ? <StatusBadge status="reversed" /> : e.checked_by ? <span className="badge checked">✓ {t("checked")}</span> : <span className="muted small">—</span>}</td>
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={10} className="muted">{t("noData")}</td></tr>
+            <tr><td colSpan={9} className="muted">{t("noData")}</td></tr>
           )}
         </tbody>
       </table>
@@ -49,55 +53,63 @@ export function ExpenseTable({ rows, onOpen }: { rows: Expense[]; onOpen: (e: Ex
   );
 }
 
+/** Downloads a stored file under a readable name. */
+export async function downloadStored(bucket: "invoices" | "attachments", path: string, filename: string) {
+  const { data, error } = await supabase().storage.from(bucket).download(path);
+  if (error || !data) throw new Error(error?.message ?? "Download failed");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(data);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+export function invoiceFileName(e: Pick<Expense, "expense_date" | "external_id" | "invoice_path">): string {
+  const ext = (e.invoice_path?.split(".").pop() || "jpg").toLowerCase();
+  return `${e.expense_date}_${e.external_id}.${ext}`;
+}
+
 export function ExpenseDetail({ expense, onClose, onChanged }: { expense: Expense; onClose: () => void; onChanged: () => void }) {
   const { t, name, profile } = useApp();
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(expense.check_note ?? "");
+  const [month, setMonth] = useState(expense.period_month);
   const action = useAction();
   const image = useLoad(() => signedUrl("invoices", expense.invoice_path), [expense.invoice_path]);
-  const events = useLoad(
-    async () => must(await supabase().from("expense_events").select("*").eq("expense_id", expense.id).order("at")) as ExpenseEvent[],
-    [expense.id],
-  );
 
-  const canReview = expense.status === "pending" && profile && (profile.role === "admin" || (profile.role === "approver" && expense.submitted_by !== profile.id));
-  const canReverse = expense.status === "approved" && profile?.role === "admin";
+  const isAdmin = profile?.role === "admin";
+  const canCheck = (profile?.role === "admin" || profile?.role === "accounts") && expense.status === "recorded";
+  const isPdf = expense.invoice_path?.toLowerCase().endsWith(".pdf");
 
-  async function review(decision: ReviewDecision) {
-    if (decision !== "approve" && !note.trim()) {
-      action.setError(`${t("reason")}: ${t("required")}`);
-      return;
-    }
-    const ok = await action.run(async () => must(await supabase().rpc("review_expense", { p_id: expense.id, p_decision: decision, p_note: note || null })));
+  async function setChecked(checked: boolean) {
+    const ok = await action.run(async () => must(await supabase().rpc("set_checked", { p_id: expense.id, p_checked: checked, p_note: note || null })));
     if (ok) onChanged();
   }
-
   async function reverse() {
-    if (!note.trim()) {
-      action.setError(`${t("reason")}: ${t("required")}`);
-      return;
-    }
+    if (!note.trim()) return action.setError(`${t("reason")}: ${t("required")}`);
     const ok = await action.run(async () => must(await supabase().rpc("reverse_expense", { p_id: expense.id, p_reason: note })));
     if (ok) onChanged();
   }
-
-  const isPdf = expense.invoice_path?.toLowerCase().endsWith(".pdf");
+  async function move() {
+    const ok = await action.run(async () => must(await supabase().from("expenses").update({ period_month: month }).eq("id", expense.id).select()));
+    if (ok) onChanged();
+  }
 
   return (
     <Modal title={`${t("expense")} ${expense.external_id}`} onClose={onClose}>
       <div className="grid2">
         <dl className="kv">
-          <dt>{t("status")}</dt>
-          <dd><StatusBadge status={expense.status} /></dd>
           <dt>{t("amount")}</dt>
           <dd><strong><Money value={expense.amount} direction="out" /></strong></dd>
+          <dt>{t("paidBy")}</dt>
+          <dd><PaidBy value={expense.paid_by} /></dd>
           <dt>{t("vat")}</dt>
           <dd><Money value={expense.vat_amount} /></dd>
           <dt>{t("date")}</dt>
           <dd>{expense.expense_date}</dd>
+          <dt>{t("month")}</dt>
+          <dd>{monthLabel(expense.period_month)}</dd>
           <dt>{t("custodian")}</dt>
           <dd>{name("profiles", expense.submitted_by)}</dd>
-          <dt>{t("wallet")}</dt>
-          <dd>{name("wallets", expense.wallet_id)}</dd>
           <dt>{t("project")}</dt>
           <dd>{name("projects", expense.project_id)}</dd>
           <dt>{t("category")}</dt>
@@ -108,88 +120,92 @@ export function ExpenseDetail({ expense, onClose, onChanged }: { expense: Expens
           <dd>{expense.vendor_vat_number || "—"}</dd>
           <dt>{t("invoiceNumber")}</dt>
           <dd>{expense.invoice_number || "—"}</dd>
-          <dt>{t("description")}</dt>
+          <dt>{t("remarks")}</dt>
           <dd>{expense.description || "—"}</dd>
-          {expense.review_note && (
-            <>
-              <dt>{t("notes")}</dt>
-              <dd>{expense.review_note}</dd>
-            </>
-          )}
+          <dt>{t("checked")}</dt>
+          <dd>
+            {expense.checked_by ? `✓ ${name("profiles", expense.checked_by)}, ${fmtDateTime(expense.checked_at)}` : t("unchecked")}
+            {expense.check_note ? <div className="small muted">{expense.check_note}</div> : null}
+          </dd>
           {expense.reversal_reason && (
             <>
               <dt>{t("reversed")}</dt>
               <dd>{expense.reversal_reason}</dd>
             </>
           )}
+          <dt>Saved</dt>
+          <dd className="small muted">{fmtDateTime(expense.created_at)}</dd>
         </dl>
         <div>
           {expense.invoice_path ? (
-            image.data ? (
-              isPdf ? (
-                <a href={image.data} target="_blank" rel="noreferrer">{t("invoice")} (PDF)</a>
+            <>
+              {image.data ? (
+                isPdf ? (
+                  <a href={image.data} target="_blank" rel="noreferrer">{t("invoice")} (PDF)</a>
+                ) : (
+                  <a href={image.data} target="_blank" rel="noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="invoice-img" src={image.data} alt={t("invoice")} />
+                  </a>
+                )
               ) : (
-                <a href={image.data} target="_blank" rel="noreferrer">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="invoice-img" src={image.data} alt={t("invoice")} />
-                </a>
-              )
-            ) : (
-              <span className="muted">…</span>
-            )
+                <span className="muted">…</span>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <button
+                  disabled={action.busy}
+                  onClick={() => action.run(() => downloadStored("invoices", expense.invoice_path!, invoiceFileName(expense)))}
+                >
+                  ⬇ {t("downloadInvoice")}
+                </button>
+              </div>
+            </>
           ) : (
-            <span className="muted">No invoice attached</span>
+            <span className="muted">No bill attached</span>
           )}
         </div>
       </div>
 
-      <h2>{t("history")}</h2>
-      <ul className="small">
-        {(events.data ?? []).map((ev) => (
-          <li key={ev.id}>
-            {fmtDateTime(ev.at)}: {ev.from_status ? `${t(ev.from_status)} → ` : ""}
-            <strong>{t(ev.to_status)}</strong> {ev.actor_id ? `(${name("profiles", ev.actor_id)})` : ""}
-            {ev.note ? ` · ${ev.note}` : ""}
-          </li>
-        ))}
-      </ul>
-
-      {(canReview || canReverse) && (
-        <Field label={`${t("reason")} / ${t("notes")}`} full>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} />
+      {(canCheck || isAdmin) && expense.status === "recorded" && (
+        <Field label={isAdmin ? `${t("notes")} (check note, or reason to reverse)` : t("notes")} full>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
         </Field>
+      )}
+      {isAdmin && expense.status === "recorded" && (
+        <div className="toolbar" style={{ marginTop: 8 }}>
+          <span className="small muted">{t("month")}</span>
+          <MonthSelect value={month} onChange={setMonth} />
+          <button disabled={action.busy || month === expense.period_month} onClick={move}>Move to this month</button>
+        </div>
       )}
       <ErrorText error={action.error} />
       <div className="actions">
-        {canReview && (
-          <>
-            <button className="danger" disabled={action.busy} onClick={() => review("reject")}>{t("reject")}</button>
-            <button disabled={action.busy} onClick={() => review("request_changes")}>{t("requestChanges")}</button>
-            <button className="primary" disabled={action.busy} onClick={() => review("approve")}>{t("approve")}</button>
-          </>
+        {isAdmin && expense.status === "recorded" && (
+          <button className="danger" disabled={action.busy} onClick={reverse} title="For an entry made by mistake or refunded">{t("reverse")}</button>
         )}
-        {canReverse && (
-          <button className="danger" disabled={action.busy} onClick={reverse}>{t("reverse")}</button>
-        )}
+        {canCheck && (expense.checked_by ? (
+          <button disabled={action.busy} onClick={() => setChecked(false)}>Untick</button>
+        ) : (
+          <button className="primary" disabled={action.busy} onClick={() => setChecked(true)}>✓ {t("markChecked")}</button>
+        ))}
         <button onClick={onClose}>{t("cancel")}</button>
       </div>
     </Modal>
   );
 }
 
-/** Web form for recording an expense (e.g. finance entering a cash disbursement). */
+/** Web form for recording an expense (e.g. finance entering one for a staff member). */
 export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { t, lookups, profile, locale } = useApp();
-  const threshold = useLoad(async () => {
-    const { data } = await supabase().from("settings").select("value").eq("key", "invoice_required_above").maybeSingle();
-    return Number(data?.value ?? 100);
-  }, []);
+  const { t, lookups, profile, setting } = useApp();
+  const threshold = setting("invoice_required_above", 100);
   const wallets = lookups.wallets.filter((w) => w.active && (profile?.role === "admin" || w.custodian_id === profile?.id));
   const [f, setF] = useState({
     wallet_id: wallets[0]?.id ?? "",
     project_id: "",
     category_id: "",
+    paid_by: "card" as PaymentMethod,
     expense_date: today(),
+    period_month: monthOf(today()),
     amount: "",
     vat_amount: "",
     vendor: "",
@@ -201,8 +217,10 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
   const action = useAction();
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
 
+  const category = lookups.categories.find((c) => c.id === f.category_id);
   const amountH = parseAmount(f.amount);
-  const needsInvoice = amountH !== null && threshold.data !== undefined && amountH > threshold.data * 100;
+  const needsInvoice = (category?.receipt_required ?? true) && amountH !== null && amountH > threshold * 100;
+  const needsRemarks = category ? !category.receipt_required : false;
 
   async function save() {
     if (!profile) return;
@@ -210,7 +228,8 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
     const vatH = f.vat_amount ? parseAmount(f.vat_amount) : 0;
     if (vatH === null) return action.setError(`${t("vat")}: ${t("invalidAmount")}`);
     if (!f.wallet_id || !f.project_id || !f.category_id) return action.setError(`${t("wallet")}, ${t("project")}, ${t("category")}: ${t("required")}`);
-    if (needsInvoice && !file) return action.setError(t("invoiceRequired", { amount: formatSar(threshold.data ?? 0, { locale }) }));
+    if (needsInvoice && !file) return action.setError(t("invoiceRequired", { amount: formatSar(threshold) }));
+    if (needsRemarks && !f.description.trim()) return action.setError(t("remarksRequired"));
     const ok = await action.run(async () => {
       const sb = supabase();
       let path: string | null = null;
@@ -225,7 +244,9 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
           wallet_id: f.wallet_id,
           project_id: f.project_id,
           category_id: f.category_id,
+          paid_by: f.paid_by,
           expense_date: f.expense_date,
+          period_month: f.period_month,
           amount: toDecimalString(amountH),
           vat_amount: toDecimalString(vatH),
           vendor: f.vendor.trim(),
@@ -251,14 +272,23 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
             ))}
           </select>
         </Field>
+        <Field label={t("paidBy")}>
+          <select value={f.paid_by} onChange={set("paid_by")}>
+            <option value="card">{t("card")}</option>
+            <option value="cash">{t("cash")}</option>
+          </select>
+        </Field>
         <Field label={t("date")}>
-          <input type="date" value={f.expense_date} onChange={set("expense_date")} />
+          <input type="date" value={f.expense_date} onChange={(e) => setF({ ...f, expense_date: e.target.value, period_month: monthOf(e.target.value || today()) })} />
+        </Field>
+        <Field label={t("month")}>
+          <MonthSelect value={f.period_month} onChange={(v) => setF({ ...f, period_month: v })} />
         </Field>
         <Field label={t("project")}>
           <select value={f.project_id} onChange={set("project_id")}>
             <option value="" />
             {lookups.projects.filter((p) => p.active).map((p) => (
-              <option key={p.id} value={p.id}>{p.code} {p.name}</option>
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </Field>
@@ -266,7 +296,7 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
           <select value={f.category_id} onChange={set("category_id")}>
             <option value="" />
             {lookups.categories.filter((c) => c.active).map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{c.name}{c.receipt_required ? "" : " (no bill)"}</option>
             ))}
           </select>
         </Field>
@@ -282,23 +312,23 @@ export function NewExpense({ onClose, onSaved }: { onClose: () => void; onSaved:
         <Field label={t("vendor")}>
           <input value={f.vendor} onChange={set("vendor")} />
         </Field>
-        <Field label={t("vendorVat")}>
-          <input value={f.vendor_vat_number} onChange={set("vendor_vat_number")} maxLength={15} />
-        </Field>
         <Field label={t("invoiceNumber")}>
           <input value={f.invoice_number} onChange={set("invoice_number")} />
         </Field>
         <Field label={`${t("invoice")}${needsInvoice ? " *" : ""}`}>
           <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </Field>
-        <Field label={t("description")} full>
-          <textarea value={f.description} onChange={set("description")} />
+        <Field label={`${t("vendorVat")}`}>
+          <input value={f.vendor_vat_number} onChange={set("vendor_vat_number")} maxLength={15} />
+        </Field>
+        <Field label={`${t("remarks")}${needsRemarks ? " *" : ""}`} full>
+          <textarea value={f.description} onChange={set("description")} placeholder={t("remarksHint")} />
         </Field>
       </div>
       <ErrorText error={action.error} />
       <div className="actions">
         <button onClick={onClose}>{t("cancel")}</button>
-        <button className="primary" disabled={action.busy} onClick={save}>{t("submit")}</button>
+        <button className="primary" disabled={action.busy} onClick={save}>{t("save")}</button>
       </div>
     </Modal>
   );
