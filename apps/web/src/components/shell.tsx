@@ -96,7 +96,7 @@ function Login() {
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="badge-hero" src="/badge.webp" alt="Express Cash" />
+      <img className="train-hero" src="/train.webp" alt="Express Cash" />
       <div style={{ display: "grid", gap: 14 }}>
         <Field label={t("email")}>
           <input type="email" inputMode="email" autoCapitalize="none" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />

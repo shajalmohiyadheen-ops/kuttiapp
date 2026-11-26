@@ -151,15 +151,14 @@ export function fmtDateTime(s: string | null | undefined): string {
   return s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "—";
 }
 
-/** App name shown in headers: small round badge plus the "Express Cash!" text. */
+/** App name shown in headers, drawn as text so it stays sharp. */
 export function Wordmark() {
   return (
-    <div className="wordmark">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/badge-sm.webp" alt="" />
+    <div className="wordmark" aria-label="Express Cash">
       <span>
         Express <b>Cash!</b>
       </span>
+      <i />
     </div>
   );
 }
