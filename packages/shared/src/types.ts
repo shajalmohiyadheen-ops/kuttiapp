@@ -42,7 +42,7 @@ export interface WalletBalance {
   topups_total: Num;
   approved_total: Num;
   pending_total: Num;
-  confirmed_balance: Num;
+  rejected_total: Num;
   available_balance: Num;
 }
 

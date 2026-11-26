@@ -77,7 +77,7 @@ function Dashboard() {
           { k: "Total top-ups", v: s?.topups_total },
           { k: "Approved expenses", v: s?.approved_total },
           { k: "Pending expenses", v: s?.pending_total },
-          { k: "Total disbursed (approved + pending)", v: s?.disbursed_total },
+          { k: "Total spent (all except reversed)", v: s?.disbursed_total },
           { k: "VAT on approved", v: s?.approved_vat },
         ],
       },
@@ -165,7 +165,7 @@ function Dashboard() {
       <div className="tiles">
         <Tile hero label={t("balance")} value={balances.data ? sumOf(balances.data, "available_balance") : undefined} sub="All wallets, today" />
         <Tile direction="in" label={`${t("moneyIn")} · ${t("totalTopups")}`} value={s?.topups_total} sub={projectId ? "Not split by project" : `${s?.topups_count ?? 0} transfers`} />
-        <Tile direction="out" label={`${t("moneyOut")} · ${t("totalDisbursed")}`} value={s?.disbursed_total} sub="Approved + pending" />
+        <Tile direction="out" label={`${t("moneyOut")} · ${t("totalDisbursed")}`} value={s?.disbursed_total} sub="Approved, pending and rejected" />
         <Tile direction="out" label={t("approved")} value={s?.approved_total} sub={`${s?.approved_count ?? 0} expenses`} />
         <Tile direction="out" label={t("pending")} value={s?.pending_total} sub={`${s?.pending_count ?? 0} awaiting review`} />
         <Tile label={t("vat")} value={s?.approved_vat} sub="On approved expenses" />

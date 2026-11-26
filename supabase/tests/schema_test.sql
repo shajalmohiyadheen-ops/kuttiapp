@@ -82,7 +82,7 @@ select pg_temp.expect_error($$insert into expenses (client_id, wallet_id, projec
   ('aaaaaaaa-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 1150, 'x/y.jpg')$$, 'duplicate key');
 
 select pg_temp.eq((select available_balance from wallet_balances), 3470.00::numeric(14,2), 'pending deducted from available right away');
-select pg_temp.eq((select confirmed_balance from wallet_balances), 5000.00::numeric(14,2), 'confirmed ignores pending');
+select pg_temp.eq((select pending_total from wallet_balances), 1530.00::numeric(14,2), 'pending total shown separately');
 
 -- custodian cannot approve
 select pg_temp.expect_error($$select review_expense('50000000-0000-0000-0000-000000000001', 'approve')$$, 'not allowed');
@@ -131,11 +131,11 @@ select pg_temp.expect_error($$update topups set amount = 1 where id = '40000000-
 select pg_temp.expect_error($$select reverse_expense('50000000-0000-0000-0000-000000000003', 'x')$$, 'only approved');
 
 select pg_temp.eq((select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'),
-  3570.00::numeric(14,2), 'balance = 5000 - 1150 approved - 280 pending (rejected 80 released)');
+  3490.00::numeric(14,2), 'balance = 5000 - 1150 approved - 280 pending - 80 rejected (spent money still counts)');
 
 select reverse_expense('50000000-0000-0000-0000-000000000001', 'Refunded by vendor');
 select pg_temp.eq((select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'),
-  4720.00::numeric(14,2), 'reversal restores balance');
+  4640.00::numeric(14,2), 'reversal restores balance');
 
 select reverse_topup('40000000-0000-0000-0000-000000000002', 'Entered twice');
 select pg_temp.eq((select topups_total from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000002'), 0.00::numeric(14,2), 'reversed top-up excluded');
@@ -149,10 +149,11 @@ select pg_temp.eq((select count(*) > 0 from audit_log where table_name = 'expens
 select pg_temp.eq((dashboard_summary() ->> 'topups_total')::numeric, 5000::numeric, 'dashboard top-ups');
 select pg_temp.eq((dashboard_summary() ->> 'pending_total')::numeric, 280::numeric, 'dashboard pending');
 select pg_temp.eq((dashboard_summary() ->> 'approved_total')::numeric, 0::numeric, 'dashboard approved after reversal');
+select pg_temp.eq((dashboard_summary() ->> 'disbursed_total')::numeric, 360::numeric, 'dashboard spent includes rejected (280 pending + 80 rejected)');
 select pg_temp.eq((select count(*) from spend_breakdown('project')), 1::bigint, 'breakdown by project');
 
 -- reconciliation
-select pg_temp.eq((record_statement_check('10000000-0000-0000-0000-000000000001', current_date, 4700)).difference, -20.00::numeric(14,2),
+select pg_temp.eq((record_statement_check('10000000-0000-0000-0000-000000000001', current_date, 4620)).difference, -20.00::numeric(14,2),
   'statement check flags a 20 SAR gap');
 
 -- custodian cannot read audit log or statement checks

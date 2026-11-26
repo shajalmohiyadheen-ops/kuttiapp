@@ -154,7 +154,7 @@ create table public.topups (
   amount          numeric(14,2) not null check (amount > 0),
   transfer_date   date not null default current_date,
   method          text not null default 'bank_transfer' check (method in ('bank_transfer', 'cash', 'opening_balance', 'custodian_repayment', 'other')),
-  -- custodian_repayment: money a custodian pays back, e.g. for a rejected card swipe
+  -- custodian_repayment: money a custodian hands back to the card or float
   reference       text,               -- bank transfer reference
   notes           text,
   attachment_path text,               -- storage path in the 'attachments' bucket
@@ -529,11 +529,11 @@ select
   coalesce(t.total, 0)::numeric(14,2)                              as topups_total,
   coalesce(e.approved, 0)::numeric(14,2)                           as approved_total,
   coalesce(e.pending, 0)::numeric(14,2)                            as pending_total,
-  -- balance if every pending expense were rejected (upper bound)
-  (coalesce(t.total, 0) - coalesce(e.approved, 0))::numeric(14,2)  as confirmed_balance,
-  -- the balance the app shows, and what the bank statement should match:
-  -- a card swipe has already left the bank whether or not it is approved yet
-  (coalesce(t.total, 0) - coalesce(e.approved, 0) - coalesce(e.pending, 0))::numeric(14,2) as available_balance
+  coalesce(e.rejected, 0)::numeric(14,2)                           as rejected_total,
+  -- the balance the app shows, and what the bank statement should match.
+  -- Money that was spent has left the card or float whatever its review status;
+  -- approval is for accounts and audit. Only a reversal (e.g. vendor refund) gives it back.
+  (coalesce(t.total, 0) - coalesce(e.approved, 0) - coalesce(e.pending, 0) - coalesce(e.rejected, 0))::numeric(14,2) as available_balance
 from public.wallets w
 left join public.profiles p on p.id = w.custodian_id
 left join lateral (
@@ -542,7 +542,8 @@ left join lateral (
 left join lateral (
   select
     sum(amount) filter (where status = 'approved') as approved,
-    sum(amount) filter (where status in ('pending', 'changes_requested')) as pending
+    sum(amount) filter (where status in ('pending', 'changes_requested')) as pending,
+    sum(amount) filter (where status = 'rejected') as rejected
   from public.expenses where wallet_id = w.id
 ) e on true;
 
@@ -611,8 +612,8 @@ as $$
     'approved_total', e.approved, 'approved_count', e.approved_n, 'approved_vat', e.approved_vat,
     'pending_total', e.pending, 'pending_count', e.pending_n,
     'rejected_total', e.rejected,
-    'disbursed_total', e.approved + e.pending,
-    'net_movement', t.total - e.approved - e.pending
+    'disbursed_total', e.approved + e.pending + e.rejected,
+    'net_movement', t.total - e.approved - e.pending - e.rejected
   )
   from t, e
 $$;
@@ -667,7 +668,8 @@ begin
   if not public.is_admin() then raise exception 'only finance admins can reconcile' using errcode = '42501'; end if;
   select coalesce(sum(amount), 0) into v_in from public.topups
    where wallet_id = p_wallet_id and status = 'posted' and transfer_date <= p_statement_date;
-  select coalesce(sum(amount) filter (where status = 'approved'), 0),
+  -- spent money counts whatever its review status; only reversals are excluded
+  select coalesce(sum(amount) filter (where status in ('approved', 'rejected')), 0),
          coalesce(sum(amount) filter (where status in ('pending', 'changes_requested')), 0)
     into v_out, v_pending
     from public.expenses where wallet_id = p_wallet_id and expense_date <= p_statement_date;

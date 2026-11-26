@@ -1,6 +1,6 @@
 # Setup and deployment
 
-About an hour end to end. You need: a Supabase account, a Vercel account (or any Node host) for the web app, and an Expo account for the mobile builds. An Apple Developer account (USD 99/year) is needed only for iPhone installs.
+About an hour end to end. You need: a Supabase account, a Render account (or any Node host) for the web app, and an Expo account for the mobile builds. An Apple Developer account (USD 99/year) is needed only for iPhone installs.
 
 ## 1. Supabase (database, login, invoice storage)
 
@@ -31,11 +31,15 @@ npm install
 npm run dev:web
 ```
 
-Deploy on Vercel:
+Deploy on Render (the repo includes `render.yaml`):
 
-1. Import the GitHub repo and set **Root Directory** to `apps/web`.
-2. Add the environment variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
-3. Deploy. The `NEXT_PUBLIC_*` values are built into the pages, so redeploy after changing them.
+1. Merge the code into `main` on GitHub. Render deploys from `main`.
+2. Render > **New** > **Blueprint**, connect GitHub, and pick the `kuttiapp` repo. Render reads `render.yaml`.
+3. Render asks for three values. Paste them from Supabase > Project Settings > API: `NEXT_PUBLIC_SUPABASE_URL` (Project URL), `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon / publishable key) and `SUPABASE_SERVICE_ROLE_KEY` (service_role / secret key).
+4. Click **Apply**. The first build takes a few minutes. Render then gives you an address like `https://kuttiapp-web.onrender.com`.
+5. In Supabase > Authentication > URL Configuration, set **Site URL** to that address.
+
+`render.yaml` uses the Free plan. It sleeps after 15 minutes without visitors and takes about a minute to wake up. For an always-on app, change the plan to Starter (USD 7 a month at the time of writing) in Render. The `NEXT_PUBLIC_*` values are built into the pages, so after changing them use **Manual Deploy** > **Clear build cache & deploy**.
 
 Any Node 22 host works the same way: `npm ci && npm run build -w @kuttiapp/web && npm run start -w @kuttiapp/web`.
 

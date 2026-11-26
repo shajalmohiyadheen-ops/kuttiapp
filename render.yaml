@@ -1,0 +1,27 @@
+# Render Blueprint for the KuttiApp web admin (Next.js).
+# Render > New > Blueprint > pick this repo. Render asks for the three secret values below.
+# The database, login and invoice storage stay on Supabase.
+services:
+  - type: web
+    name: kuttiapp-web
+    runtime: node
+    plan: free             # sleeps after 15 minutes idle (about a minute to wake); switch to "starter" (USD 7/month) to keep it always on
+    region: frankfurt      # closest Render region to Saudi Arabia; match your Supabase region
+    branch: main
+    buildCommand: npm ci && npm run build -w @kuttiapp/web
+    startCommand: npm run start -w @kuttiapp/web -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # NEXT_PUBLIC_* values are built into the pages: after changing them, redeploy
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      # server only, used by the Users page to create logins; never put it in the mobile app
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

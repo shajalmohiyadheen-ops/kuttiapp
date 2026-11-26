@@ -111,7 +111,7 @@ export default function ExpensesPage() {
       </div>
       <ErrorText error={list.error} />
       <p className="muted small">
-        {rows.length} · <Money value={toDecimalString(sum(rows.filter((r) => r.status !== "rejected" && r.status !== "reversed").map((r) => r.amount)))} /> (excluding rejected and reversed)
+        {rows.length} · <Money value={toDecimalString(sum(rows.filter((r) => r.status !== "reversed").map((r) => r.amount)))} /> (excluding reversed)
       </p>
       <ExpenseTable rows={rows} onOpen={setOpen} />
       {open && <ExpenseDetail expense={open} onClose={() => setOpen(null)} onChanged={() => (setOpen(null), list.reload())} />}

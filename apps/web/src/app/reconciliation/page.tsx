@@ -48,10 +48,9 @@ function Reconciliation() {
     <>
       <h1>{t("reconciliation")}</h1>
       <div className="notice">
-        KuttiApp can&apos;t read Alinma balances directly, so the balance here is calculated: top-ups minus every approved and pending expense.
+        KuttiApp can&apos;t read Alinma balances directly, so the balance here is calculated: top-ups minus every expense except reversed ones. A rejected expense still counts, because the money was spent; rejection is for accounts and audit.
         Once a week (or at month end), enter the balance from the bank statement or the Alinma app. Any difference means a swipe or transfer that
-        hasn&apos;t been entered, or an amount typed wrong. A rejected card expense also shows up as a difference until the custodian repays it
-        (record the repayment as a top-up with method &ldquo;{t("custodian_repayment")}&rdquo;).
+        hasn&apos;t been entered, or an amount typed wrong.
       </div>
 
       <div className="panel">

@@ -158,7 +158,7 @@ async function main() {
   await review(pm, e4.id, "approve");
   await review(finance, e7.id, "approve");
   await review(finance, e8.id, "approve");
-  await review(finance, e9.id, "reject", "Personal coffee, not a business expense. Please repay to the card.");
+  await review(finance, e9.id, "reject", "Personal coffee, not a business expense.");
   // e5 and e6 stay pending for the approval queue.
   void e5;
   void e6;

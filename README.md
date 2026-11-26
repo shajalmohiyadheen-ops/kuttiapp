@@ -16,11 +16,11 @@ Setup and deployment: **[docs/SETUP.md](docs/SETUP.md)**. Odoo plan: [docs/ODOO-
 Alinma has no public API for card balances, so KuttiApp **calculates** each wallet's balance:
 
 ```
-balance = posted top-ups − approved expenses − pending expenses
+balance = posted top-ups − every expense that isn't reversed
 ```
 
-- A card swipe has already left the bank, so a pending expense is deducted the moment it is submitted.
-- A rejected expense stops counting. For a card that means the app balance is now higher than the bank, which is correct: the custodian owes that money. Record the repayment as a top-up with method "Repaid by custodian".
+- KuttiApp is a record of what was spent and on what, not an enforcement tool. A card swipe has already left the bank, so an expense is deducted the moment it is submitted and stays deducted whether it is approved, rejected or waiting. Approval and rejection are for accounts and audit to classify the spend; the app takes no further action on a rejection.
+- Only a **reversal** gives money back to the balance, for example a vendor refund or an entry made twice.
 - Reconciliation is manual: on the Reconciliation page, enter the balance shown in the Alinma app or statement. KuttiApp stores the calculated balance at that date next to it and flags any difference.
 
 ## Rules the database enforces
