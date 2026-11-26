@@ -29,6 +29,20 @@ export interface Wallet {
   opening_balance: Num;
 }
 
+/** One wallet row on the dashboard: opening + transferred - spent = balance (numbers come as strings). */
+export interface WalletMonthSummary {
+  wallet_id: string;
+  name: string;
+  card_last4: string | null;
+  custodian_name: string | null;
+  active: boolean;
+  opening: string;
+  transferred: string;
+  spent: string;
+  vat: string;
+  balance: string;
+}
+
 export interface WalletBalance {
   wallet_id: string;
   external_id: string;

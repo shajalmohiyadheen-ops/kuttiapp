@@ -609,6 +609,40 @@ as $$
   from t, e
 $$;
 
+-- One row per wallet for the dashboard, so the figures always add up on screen:
+--   opening + transferred - spent = balance.
+-- With a month: opening is the balance at the start of that month, and balance is at its end.
+-- With no month: opening is what was brought forward from closed months, and balance is now.
+create or replace function public.wallet_month_summary(p_month date default null)
+returns table (
+  wallet_id uuid, name text, card_last4 text, custodian_name text, active boolean,
+  opening numeric, transferred numeric, spent numeric, vat numeric, balance numeric
+)
+language sql stable security invoker set search_path = public
+as $$
+  select
+    w.id, w.name, w.card_last4, p.full_name, w.active,
+    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0))::numeric(14,2),
+    coalesce(t.inside, 0)::numeric(14,2),
+    coalesce(e.inside, 0)::numeric(14,2),
+    coalesce(e.vat, 0)::numeric(14,2),
+    (w.opening_balance + coalesce(t.before, 0) - coalesce(e.before, 0) + coalesce(t.inside, 0) - coalesce(e.inside, 0))::numeric(14,2)
+  from public.wallets w
+  left join public.profiles p on p.id = w.custodian_id
+  left join lateral (
+    select sum(amount) filter (where p_month is not null and period_month < p_month) as before,
+           sum(amount) filter (where p_month is null or period_month = p_month) as inside
+    from public.topups where wallet_id = w.id and status = 'posted'
+  ) t on true
+  left join lateral (
+    select sum(amount) filter (where p_month is not null and period_month < p_month) as before,
+           sum(amount) filter (where p_month is null or period_month = p_month) as inside,
+           sum(vat_amount) filter (where p_month is null or period_month = p_month) as vat
+    from public.expenses where wallet_id = w.id and status = 'recorded'
+  ) e on true
+  order by w.active desc, w.name
+$$;
+
 -- Spend grouped by a dimension, for the dashboard tables.
 create or replace function public.spend_breakdown(
   p_group text,                -- 'project' | 'category' | 'wallet' | 'custodian' | 'month'
@@ -916,7 +950,7 @@ declare f text;
 begin
   foreach f in array array[
     'set_checked(uuid, boolean, text)', 'reverse_expense(uuid, text)', 'reverse_topup(uuid, text)',
-    'record_statement_check(uuid, date, numeric, text)', 'dashboard_summary(date, date, uuid, uuid, uuid, date)',
+    'record_statement_check(uuid, date, numeric, text)', 'dashboard_summary(date, date, uuid, uuid, uuid, date)', 'wallet_month_summary(date)',
     'spend_breakdown(text, date, date, uuid, uuid, date)', 'month_fingerprint(date)', 'month_overview()',
     'record_month_export(date, integer)', 'close_month(date, text)', 'mark_files_removed(date, text[])', 'storage_usage()'
   ] loop

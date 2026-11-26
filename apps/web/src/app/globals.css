@@ -225,3 +225,8 @@ button { font-weight: 600; }
 input, select, textarea { font-weight: 400; }
 .phone .item > div { flex: 1; min-width: 0; }
 .phone .item > span { white-space: nowrap; font-weight: 700; }
+.tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tally { margin: 12px 0 0; padding: 12px 16px; border-radius: 12px; background: var(--panel); border: 1px dashed var(--border); font-size: 16px; color: var(--muted); }
+.tally .op { font-weight: 700; color: var(--text); margin: 0 4px; }
+.tally strong { color: var(--text); }

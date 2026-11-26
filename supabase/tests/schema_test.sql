@@ -174,6 +174,20 @@ select pg_temp.eq((select count(*) > 0 from audit_log where table_name = 'expens
 select pg_temp.eq((dashboard_summary(p_month => (select this_month from ids)) ->> 'spent_total')::numeric, 1500::numeric, 'dashboard spent this month (1100 + 400)');
 select pg_temp.eq((dashboard_summary() ->> 'spent_cash')::numeric, 600::numeric, 'dashboard cash spend');
 select pg_temp.eq((select count(*) from spend_breakdown('month')), 2::bigint, 'breakdown by month');
+select pg_temp.eq((select count(*) from wallet_month_summary((select this_month from ids)) where opening + transferred - spent <> balance), 0::bigint,
+  'wallet summary adds up for a month: opening + transferred - spent = balance');
+select pg_temp.eq((select count(*) from wallet_month_summary() where opening + transferred - spent <> balance), 0::bigint,
+  'wallet summary adds up across all open months');
+select pg_temp.eq((select balance from wallet_month_summary((select this_month from ids)) where wallet_id = '10000000-0000-0000-0000-000000000001'),
+  (select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'), 'balance at end of this month = balance now');
+select pg_temp.eq((select balance from wallet_month_summary() where wallet_id = '10000000-0000-0000-0000-000000000001'),
+  (select available_balance from wallet_balances where wallet_id = '10000000-0000-0000-0000-000000000001'), 'all-months balance = balance now');
+select pg_temp.eq((select opening from wallet_month_summary((select this_month from ids)) where wallet_id = '10000000-0000-0000-0000-000000000001'),
+  (select coalesce(sum(case when kind = 'in' then amount else -amount end), 0)::numeric(14,2) from (
+     select 'in' as kind, amount from topups where wallet_id = '10000000-0000-0000-0000-000000000001' and status = 'posted' and period_month < (select this_month from ids)
+     union all
+     select 'out', amount from expenses where wallet_id = '10000000-0000-0000-0000-000000000001' and status = 'recorded' and period_month < (select this_month from ids)) x),
+  'opening = everything before the month');
 
 -- reconciliation
 select pg_temp.eq((record_statement_check('10000000-0000-0000-0000-000000000001', current_date, 3280)).difference, -20.00::numeric(14,2),
