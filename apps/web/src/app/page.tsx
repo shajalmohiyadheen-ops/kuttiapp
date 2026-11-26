@@ -8,6 +8,7 @@ import { downloadXlsx } from "@/lib/export";
 import { standardSheets } from "@/lib/workbook";
 import { RequireRole } from "@/components/shell";
 import { invoiceFileName } from "@/components/expenses";
+import { Bars, Donut, type Bar } from "@/components/charts";
 import { ErrorText, Field, Money, MonthSelect, monthStart, useAction, useLive, useLoad } from "@/components/ui";
 
 export default function DashboardPage() {
@@ -31,7 +32,12 @@ function Dashboard() {
   const summary = useLoad(async () => must(await supabase().rpc("wallet_month_summary", { p_month: month || null })) as WalletMonthSummary[], [month]);
   const flags = useLoad(async () => must(await supabase().rpc("attention_flags")) as AttentionFlag[], []);
   const storage = useLoad(async () => must(await supabase().rpc("storage_usage")) as StorageUsage | null, []);
-  useLive(() => (summary.reload(), flags.reload()));
+  const spend = useLoad(async () => {
+    let q = supabase().from("expenses").select("wallet_id,project_id,expense_date,period_month,amount").eq("status", "recorded");
+    if (month) q = q.eq("period_month", month);
+    return must(await q) as Pick<Expense, "wallet_id" | "project_id" | "expense_date" | "period_month" | "amount">[];
+  }, [month]);
+  useLive(() => (summary.reload(), flags.reload(), spend.reload()));
 
   const rows = (summary.data ?? []).filter((r) => !walletId || r.wallet_id === walletId);
   const total = (k: keyof WalletMonthSummary) => (rows.reduce((a, r) => a + fromDb(r[k] as string), 0) / 100).toFixed(2);
@@ -64,6 +70,13 @@ function Dashboard() {
     });
   }
 
+  const spent = (spend.data ?? []).filter((e) => !walletId || e.wallet_id === walletId);
+  const byProject = new Map<string, number>();
+  for (const e of spent) byProject.set(e.project_id, (byProject.get(e.project_id) ?? 0) + fromDb(e.amount));
+  const projectName = (id: string) => lookups.projects.find((p) => p.id === id)?.name ?? "Unknown project";
+  const slices = [...byProject].map(([id, cents]) => ({ label: projectName(id), cents }));
+  const bars: Bar[] = month ? weeks(month, spent) : months(spent);
+
   const used = storage.data ? storage.data.used_bytes / Math.max(1, storage.data.limit_bytes) : 0;
 
   return (
@@ -92,6 +105,11 @@ function Dashboard() {
           Bill photo storage is {Math.round(used * 100)}% full. Close the oldest month (download, then erase) to free space.
         </div>
       )}
+
+      <div className="chart-row">
+        <Donut title="Spent by project" data={slices} />
+        <Bars title={month ? `Spent per week · ${monthLabel(month)}` : "Spent per month"} legend="Spent (card and cash)" data={bars} />
+      </div>
 
       <div className="tiles four">
         <Tile direction="in" label="Transferred to wallets" value={ready ? total("transferred") : undefined} />
@@ -182,4 +200,28 @@ function Tile({ label, value, direction, hero }: { label: string; value: string 
       <div className="value">{value === undefined ? "…" : <Money value={value} direction={direction} />}</div>
     </div>
   );
+}
+
+/** Spending in week buckets of the month: 1–7, 8–14, 15–21, 22–28, 29–end. */
+function weeks(month: string, rows: Array<{ expense_date: string; amount: string | number }>): Bar[] {
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const mon = new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en", { month: "short", timeZone: "UTC" });
+  const out: Bar[] = [];
+  for (let start = 1; start <= last; start += 7) {
+    const end = Math.min(last, start + 6);
+    out.push({ label: `${start}–${end}`, sub: `${start}–${end} ${mon}`, cents: 0 });
+  }
+  for (const r of rows) {
+    // an expense dated in another month but booked to this one goes to the nearest end
+    const ym = r.expense_date.slice(0, 7), d = Number(r.expense_date.slice(8, 10));
+    const i = ym < month.slice(0, 7) ? 0 : ym > month.slice(0, 7) ? out.length - 1 : Math.min(out.length - 1, Math.floor((d - 1) / 7));
+    out[i].cents += fromDb(r.amount);
+  }
+  return out;
+}
+function months(rows: Array<{ period_month: string; amount: string | number }>): Bar[] {
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.period_month, (map.get(r.period_month) ?? 0) + fromDb(r.amount));
+  return [...map].sort(([a], [b]) => a.localeCompare(b)).map(([k, cents]) => ({ label: monthLabel(k).slice(0, 3), sub: monthLabel(k), cents }));
 }

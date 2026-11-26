@@ -353,3 +353,105 @@ button.primary { box-shadow: 0 6px 18px var(--glow); }
 .theme-toggle { margin: 8px; padding: 4px; border-radius: 999px; background: var(--field); border: 1px solid var(--edge); }
 .theme-toggle button { border: 0; box-shadow: none; background: transparent; }
 .theme-toggle button.on { box-shadow: 0 4px 12px var(--glow); }
+
+/* ── Dashboard-card theme: near-black page, charcoal cards, indigo/violet charts, blue pill buttons, Poppins. Cyan stays only on the XC logo. ── */
+:root {
+  --bg: #0b0b0c;
+  --bg-grad: #0b0b0c;
+  --panel: #1c1c1e;
+  --panel-solid: #1c1c1e;
+  --text: #f2f2f4;
+  --muted: #a1a1aa;
+  --border: rgb(255 255 255 / 9%);
+  --edge: rgb(255 255 255 / 8%);
+  --field: #26262a;
+  --field-edge: rgb(255 255 255 / 10%);
+  --track: #2c2c31;
+  --brand: #6b8cff;
+  --blue: #1f6fe0;
+  --brand-grad: linear-gradient(0deg, var(--blue), var(--blue));
+  --brand-ink: #ffffff;
+  --glow: rgb(31 111 224 / 28%);
+  --violet-grad: linear-gradient(135deg, #4f46e5 0%, #6d3fe0 55%, #7c3aed 100%);
+  --arc-opacity: 0;
+  --neon: 0 0 0 0 transparent;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+  --money-in: #34d399;
+  --money-out: #f87171;
+  --danger: #f87171;
+  --series-1: #6366f1; --series-2: #00a888; --series-3: #d28e05; --series-4: #e24d8b; --series-5: #338ced; --series-6: #e76624; --series-7: #9887ef; --series-other: #6b6b74;
+  --font: "Poppins", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+:root[data-theme="light"] {
+  --bg: #f4f5f8;
+  --bg-grad: #f4f5f8;
+  --panel: #ffffff;
+  --panel-solid: #ffffff;
+  --text: #18181b;
+  --muted: #63636b;
+  --border: #e6e7ec;
+  --edge: #e6e7ec;
+  --field: #f3f4f7;
+  --field-edge: #e3e4ea;
+  --track: #eceef3;
+  --brand: #4f46e5;
+  --blue: #1d64d8;
+  --glow: rgb(29 100 216 / 22%);
+  --shadow: 0 1px 2px rgb(20 20 40 / 5%), 0 8px 24px rgb(20 20 40 / 6%);
+  --money-in: #0f8a52;
+  --money-out: #d61f1f;
+  --danger: #d61f1f;
+  --arc-opacity: 0;
+  --series-1: #4f46e5; --series-2: #00b894; --series-3: #f2a600; --series-4: #ee7fac; --series-5: #257de0; --series-6: #f47230; --series-7: #6a4ce2; --series-other: #a1a1aa;
+}
+html, body { font-size: 15px; }
+body { background: var(--bg); }
+h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 17px; font-weight: 600; }
+.nav, .panel, .tile, .table-wrap { backdrop-filter: none; }
+.nav { background: var(--panel); }
+.tile .label { font-weight: 500; }
+.tile .value { font-weight: 600; letter-spacing: -0.01em; }
+.tile.hero, .phone .card.hero { background: var(--violet-grad); color: #fff; box-shadow: var(--shadow), 0 10px 30px rgb(99 70 230 / 30%); border-color: transparent; }
+.tile.hero .label, .phone .card.hero .muted, .phone .card.hero .pocket-total span { color: rgb(255 255 255 / 80%); }
+.tile.hero .value, .tile.hero .value * { color: #fff; }
+.phone .card.hero .pockets > div { background: rgb(255 255 255 / 14%); }
+.phone .card.hero, .phone .card.hero * { color: #fff; }
+.phone .card.hero .pockets .cash-amt, .phone .card.hero .warn-text { color: #ffd27a; }
+button.primary, .phone .bigbtn { background: var(--blue); box-shadow: 0 6px 18px var(--glow); }
+.nav a.active { background: var(--blue); }
+th { background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--muted); font-weight: 500; }
+.phone .mic { background: var(--violet-grad); box-shadow: 0 10px 30px rgb(99 70 230 / 35%); }
+a.bell-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+/* chart cards */
+.chart-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1000px) { .chart-row { grid-template-columns: minmax(0, 1fr); } }
+.chart-card { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); min-width: 0; display: flex; flex-direction: column; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--edge); }
+.chart-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.chart-empty { margin: auto; padding: 40px 0; }
+.donut-wrap { display: grid; grid-template-columns: minmax(130px, 170px) minmax(0, 1fr); gap: 18px; align-items: center; flex: 1; }
+@media (max-width: 480px) { .donut-wrap { grid-template-columns: minmax(0, 1fr); justify-items: center; } .donut { max-width: 200px; } }
+.donut { width: 100%; height: auto; display: block; }
+.donut-label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.donut-value { fill: var(--text); font-size: 17px; font-weight: 600; font-family: var(--font); }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; width: 100%; }
+.legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 6px 10px; border-radius: 12px; font-size: 13px; }
+.legend li .amt { grid-column: 2; }
+.legend li.on { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.legend .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend .pct { color: var(--muted); font-size: 12px; }
+.legend .amt { font-weight: 600; white-space: nowrap; font-size: 13px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.bars-wrap { position: relative; flex: 1; }
+.bars { width: 100%; height: auto; display: block; overflow: visible; }
+.bars .grid { stroke: var(--edge); stroke-width: 1; }
+.bars .axis { stroke: color-mix(in srgb, var(--text) 18%, transparent); stroke-width: 1; }
+.bars .tick { fill: var(--muted); font-size: 12px; font-family: var(--font); }
+.bar-tip { position: absolute; transform: translate(-50%, calc(-100% - 10px)); background: var(--panel-solid); border: 1px solid var(--edge); border-radius: 12px; padding: 6px 10px; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap; font-size: 13px; }
+.chart-foot { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+.phone .card.hero .money-out, .tile.hero .money-out { color: #ffc4c4; }
+.phone .card.hero .pockets span { color: rgb(255 255 255 / 82%); }
+.phone .card.hero .pocket-total { border-top-color: rgb(255 255 255 / 22%); }
+@media (max-width: 600px) { .bars .tick { font-size: 17px; } }
