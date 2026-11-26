@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useApp } from "@/lib/app-context";
 import { supabase } from "@/lib/supabase";
 import type { MessageKey, UserRole } from "@kuttiapp/shared";
-import { ErrorText, Field } from "./ui";
+import { ErrorText, Field, ThemeToggle } from "./ui";
 
 const NAV: Array<{ href: string; key: MessageKey; roles: UserRole[] }> = [
   { href: "/", key: "dashboard", roles: ["admin", "approver"] },
@@ -42,13 +42,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="layout">
       <nav className="nav">
-        <div className="brand">{t("appName")}</div>
+        <div className="brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="KuttiApp" />
+        </div>
         {items.map((n) => (
           <Link key={n.href} href={n.href} className={(n.href === "/" ? path === "/" : path.startsWith(n.href)) ? "active" : undefined}>
             {t(n.key)}
           </Link>
         ))}
         <div className="spacer" />
+        <ThemeToggle />
         <a href="#" onClick={(e) => (e.preventDefault(), setLocale(locale === "en" ? "ar" : "en"))}>
           {t("language")}
         </a>
@@ -84,7 +88,8 @@ function Login() {
         if (error) setError(error.message);
       }}
     >
-      <h1>{t("appName")}</h1>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="logo" src="/logo.svg" alt="KuttiApp" />
       <div style={{ display: "grid", gap: 12 }}>
         <Field label={t("email")}>
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />

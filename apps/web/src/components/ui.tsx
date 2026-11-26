@@ -4,10 +4,38 @@ import { useEffect, useState } from "react";
 import { formatSar, fromDb, type ExpenseStatus, type TopupStatus } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app-context";
 
-export function Money({ value }: { value: number | string | null | undefined }) {
+/** SAR amount. direction "in" = money coming in (green, +), "out" = money going out (red, −). */
+export function Money({ value, direction }: { value: number | string | null | undefined; direction?: "in" | "out" }) {
   const { locale } = useApp();
   const n = fromDb(value);
-  return <span className={n < 0 ? "neg" : undefined}>{formatSar(value, { locale })}</span>;
+  const cls = n === 0 ? undefined : direction === "in" ? "money-in" : direction === "out" ? "money-out" : n < 0 ? "neg" : undefined;
+  const sign = n !== 0 && direction === "in" ? "+" : n !== 0 && direction === "out" ? "−" : "";
+  return (
+    <span className={cls}>
+      {sign}
+      {formatSar(value, { locale })}
+    </span>
+  );
+}
+
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof document === "undefined") return "dark";
+    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  });
+  const set = (v: "dark" | "light") => {
+    setTheme(v);
+    document.documentElement.dataset.theme = v;
+    try {
+      localStorage.setItem("kutti.theme", v);
+    } catch {}
+  };
+  return (
+    <div className="theme-toggle" role="group" aria-label="Theme">
+      <button className={theme === "dark" ? "on" : undefined} onClick={() => set("dark")}>🌙</button>
+      <button className={theme === "light" ? "on" : undefined} onClick={() => set("light")}>☀️</button>
+    </div>
+  );
 }
 
 export function StatusBadge({ status }: { status: ExpenseStatus | TopupStatus }) {

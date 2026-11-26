@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { fromDb, sum, toDecimalString, type Expense } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app";
 import { supabase, must } from "@/lib/supabase";
-import { Button, Card, Money, StatusPill, T, useColors } from "@/components/ui";
+import { Button, Card, Logo, Money, StatusPill, T, useColors } from "@/components/ui";
 
 export default function Home() {
-  const { t, data, drafts, refresh, refreshDrafts, sync, online, session, locale, setLocale, profile } = useApp();
+  const { t, data, drafts, refresh, refreshDrafts, sync, online, session, locale } = useApp();
   const c = useColors();
   const [recent, setRecent] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ export default function Home() {
           .select("*")
           .eq("submitted_by", session.user.id)
           .order("created_at", { ascending: false })
-          .limit(30)
+          .limit(20)
           .then((r) => setRecent(must(r) as Expense[])),
       ]);
     } catch {
@@ -42,104 +43,105 @@ export default function Home() {
 
   const projectName = (id: string) => {
     const p = data.projects.find((x) => x.id === id);
-    return p ? `${p.code} ${locale === "ar" && p.name_ar ? p.name_ar : p.name}` : "";
+    return p ? (locale === "ar" && p.name_ar ? p.name_ar : p.name) : "";
   };
+  const fixes = recent.filter((e) => e.status === "changes_requested");
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      {!online && (
-        <Card style={{ borderColor: c.warn }}>
-          <T color={c.warn}>Offline. Balances are from {data.fetchedAt ? new Date(data.fetchedAt).toLocaleString() : "the last sync"}.</T>
-        </Card>
-      )}
+    <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={c.text} />}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Logo height={34} />
+          <Pressable accessibilityLabel={t("settings")} onPress={() => router.push("/settings")} hitSlop={12}>
+            <T size={26}>⚙️</T>
+          </Pressable>
+        </View>
 
-      {data.wallets.length === 0 && (
-        <Card>
-          <T muted>No card or cash float is assigned to you yet. Ask finance to set one up.</T>
-        </Card>
-      )}
-
-      {data.wallets.map((w) => {
-        const queued = sum(drafts.filter((d) => d.wallet_id === w.wallet_id).map((d) => d.amount));
-        const available = fromDb(w.available_balance) - queued;
-        return (
-          <Card key={w.wallet_id} style={{ gap: 4 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <T bold>{w.name}</T>
-              <T muted>{w.kind === "card" ? `${t("card")} •••• ${w.card_last4 ?? ""}` : t("cash")}</T>
-            </View>
-            <T muted size={13}>{t("availableBalance")}</T>
-            <Money value={toDecimalString(available)} size={28} bold />
-            <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
-              <T muted size={13}>
-                {t("pending")}: <Money value={toDecimalString(fromDb(w.pending_total) + queued)} size={13} />
-              </T>
-              <T muted size={13}>
-                {t("totalTopups")}: <Money value={w.topups_total} size={13} />
-              </T>
-            </View>
+        {!online && (
+          <Card style={{ borderColor: c.warn }}>
+            <T color={c.warn}>Offline · {data.fetchedAt ? new Date(data.fetchedAt).toLocaleString() : ""}</T>
           </Card>
-        );
-      })}
+        )}
 
-      <Button kind="primary" title={`+ ${t("newExpense")}`} onPress={() => router.push("/expense/new")} disabled={data.wallets.length === 0} />
+        {data.wallets.length === 0 && (
+          <Card>
+            <T muted>No card or cash is assigned to you yet. Ask finance.</T>
+          </Card>
+        )}
 
-      {drafts.length > 0 && (
-        <>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-            <T bold>{t("drafts")} ({drafts.length})</T>
-            <Button
-              title={t("submit")}
-              disabled={!online}
-              onPress={async () => {
-                const r = await sync();
-                if (r?.failed) Alert.alert(t("drafts"), `${r.sent} sent, ${r.failed} need attention.`);
-              }}
-            />
-          </View>
-          {drafts.map((d) => (
-            <Pressable key={d.client_id} onPress={() => router.push({ pathname: "/expense/new", params: { draft: d.client_id } })}>
-              <Card style={{ gap: 4 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <T>{d.vendor || projectName(d.project_id)}</T>
-                  <Money value={d.amount} bold />
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <T muted size={13}>{d.expense_date}</T>
-                  <StatusPill status="draft" />
-                </View>
-                {d.last_error ? <T size={12} color={c.danger}>{d.last_error}</T> : null}
-              </Card>
-            </Pressable>
-          ))}
-        </>
-      )}
+        {data.wallets.map((w) => {
+          const queued = sum(drafts.filter((d) => d.wallet_id === w.wallet_id).map((d) => d.amount));
+          const available = fromDb(w.available_balance) - queued;
+          return (
+            <Card key={w.wallet_id} style={{ gap: 6, backgroundColor: c.cardAlt }}>
+              <T muted>
+                {w.kind === "card" ? `💳 ${t("card")} •••• ${w.card_last4 ?? ""}` : `💵 ${t("cash")}`}
+              </T>
+              <Money value={toDecimalString(available)} size={34} bold />
+              <T muted size={14}>{t("availableBalance")}</T>
+            </Card>
+          );
+        })}
 
-      <T bold style={{ marginTop: 8 }}>{t("recent")}</T>
-      {recent.length === 0 && <T muted>{t("noData")}</T>}
-      {recent.map((e) => (
-        <Pressable key={e.id} onPress={() => router.push({ pathname: "/expense/[id]", params: { id: e.id } })}>
-          <Card style={{ gap: 4, borderColor: e.status === "changes_requested" ? c.warn : undefined }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <T>{e.vendor || projectName(e.project_id)}</T>
-              <Money value={e.amount} bold />
-            </View>
+        <Button big kind="primary" icon="📷" title={t("addExpense")} onPress={() => router.push("/expense/quick")} disabled={data.wallets.length === 0} />
+
+        {fixes.map((e) => (
+          <Card key={e.id} style={{ borderColor: c.warn, borderWidth: 1.5, gap: 6 }} onPress={() => router.push({ pathname: "/expense/[id]", params: { id: e.id } })}>
+            <T bold color={c.warn}>⚠️ {t("changes_requested")}</T>
+            <T>{e.review_note}</T>
+            <T muted size={14}>
+              {projectName(e.project_id)} · <Money value={e.amount} size={14} direction="out" />
+            </T>
+          </Card>
+        ))}
+
+        {drafts.length > 0 && (
+          <Card style={{ gap: 10 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <T muted size={13}>
-                {e.expense_date} · {projectName(e.project_id)}
+              <T bold>
+                📤 {t("drafts")}: {drafts.length}
               </T>
-              <StatusPill status={e.status} />
+              <Button
+                title={t("submit")}
+                disabled={!online}
+                onPress={async () => {
+                  const r = await sync();
+                  if (r?.failed) Alert.alert(t("drafts"), `${r.sent} ✓  ${r.failed} ✗`);
+                }}
+              />
             </View>
-            {e.status === "changes_requested" && e.review_note ? <T size={13} color={c.warn}>{e.review_note}</T> : null}
+            {drafts.map((d) => (
+              <Pressable key={d.client_id} onPress={() => router.push({ pathname: "/expense/new", params: { draft: d.client_id } })}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+                  <T>{projectName(d.project_id) || d.vendor}</T>
+                  <Money value={d.amount} direction="out" />
+                </View>
+                {d.last_error ? <T size={13} color={c.danger}>{d.last_error}</T> : null}
+              </Pressable>
+            ))}
           </Card>
-        </Pressable>
-      ))}
+        )}
 
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 24 }}>
-        <Button style={{ flex: 1 }} title={t("language")} onPress={() => setLocale(locale === "en" ? "ar" : "en")} />
-        <Button style={{ flex: 1 }} kind="danger" title={t("signOut")} onPress={() => supabase.auth.signOut()} />
-      </View>
-      <T muted size={12}>{profile?.full_name ?? session?.user.email}</T>
-    </ScrollView>
+        <T bold size={18} style={{ marginTop: 6 }}>{t("recent")}</T>
+        {recent.length === 0 && <T muted>{t("noData")}</T>}
+        {recent.map((e) => (
+          <Card key={e.id} style={{ paddingVertical: 12 }} onPress={() => router.push({ pathname: "/expense/[id]", params: { id: e.id } })}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <T>{projectName(e.project_id)}</T>
+                <T muted size={13}>
+                  {e.expense_date}
+                  {e.vendor ? ` · ${e.vendor}` : ""}
+                </T>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 4 }}>
+                <Money value={e.amount} bold direction="out" />
+                <StatusPill status={e.status} />
+              </View>
+            </View>
+          </Card>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
   );
 }

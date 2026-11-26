@@ -34,6 +34,17 @@ These hold for every client, including someone calling the API directly:
 - Every change to financial and master data is written to the audit log.
 - Each expense, top-up, wallet and project has a stable `external_id` (`KE-…`, `KT-…`, `KW-…`, `KP-…`) for the Odoo sync in Phase 2.
 
+## Adding an expense on the phone
+
+The flow is built for people who don't use apps much. It has one big button and four short steps:
+
+1. **Photo of the bill.** If the bill has a Saudi e-invoice QR code, KuttiApp reads the total, VAT, vendor and date from the photo, so step 3 is skipped.
+2. **"Which project?"** Hold the mic and say it ("ABB", "the Riyadh villa", "مشروع الرياض"). KuttiApp matches it against the project list and shows the best match as a big button. They can also tap a recent project or type.
+3. **"How much?"** Hold the mic and say it ("two thousand three hundred", "ألفين وثلاثمية", "2300"), or type it.
+4. **Check and send.** Every value can be tapped and changed. Category, card or cash, and an optional note are on this screen too.
+
+Speech recognition uses the phone's own Apple or Google recogniser in Arabic (ar-SA) or English. It needs an installed build of the app, not Expo Go. If there's no microphone permission or no speech service, the app goes straight to typing.
+
 ## Saudi e-invoice QR
 
 The mobile app's **Scan invoice QR** reads the ZATCA QR code printed on Saudi tax invoices and fills in vendor name, vendor VAT number, date, total, and VAT exactly. No OCR service or API key is needed. Invoices without a QR code are typed in by hand.

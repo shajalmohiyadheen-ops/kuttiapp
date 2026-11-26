@@ -35,7 +35,7 @@ export function ExpenseTable({ rows, onOpen }: { rows: Expense[]; onOpen: (e: Ex
               <td>{name("projects", e.project_id)}</td>
               <td>{name("categories", e.category_id)}</td>
               <td>{e.vendor}</td>
-              <td className="num"><Money value={e.amount} /></td>
+              <td className="num"><Money value={e.amount} direction="out" /></td>
               <td>{e.invoice_path ? "📎" : <span className="muted">—</span>}</td>
               <td><StatusBadge status={e.status} /></td>
             </tr>
@@ -89,7 +89,7 @@ export function ExpenseDetail({ expense, onClose, onChanged }: { expense: Expens
           <dt>{t("status")}</dt>
           <dd><StatusBadge status={expense.status} /></dd>
           <dt>{t("amount")}</dt>
-          <dd><strong><Money value={expense.amount} /></strong></dd>
+          <dd><strong><Money value={expense.amount} direction="out" /></strong></dd>
           <dt>{t("vat")}</dt>
           <dd><Money value={expense.vat_amount} /></dd>
           <dt>{t("date")}</dt>

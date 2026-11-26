@@ -53,7 +53,7 @@ export default function ExpenseDetail() {
           <T muted size={13}>{e.external_id}</T>
           <StatusPill status={e.status} />
         </View>
-        <Money value={e.amount} size={26} bold />
+        <Money value={e.amount} size={30} bold direction="out" />
         {row(t("vat"), <Money value={e.vat_amount} />)}
         {row(t("date"), e.expense_date)}
         {row(t("wallet"), wallet?.name ?? "—")}

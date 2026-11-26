@@ -163,10 +163,11 @@ function Dashboard() {
       <ErrorText error={summary.error || breakdown.error || balances.error} />
 
       <div className="tiles">
-        <Tile label={t("totalTopups")} value={s?.topups_total} sub={projectId ? "Not split by project" : `${s?.topups_count ?? 0} transfers`} />
-        <Tile label={t("totalDisbursed")} value={s?.disbursed_total} sub="Approved + pending" />
-        <Tile label={t("approved")} value={s?.approved_total} sub={`${s?.approved_count ?? 0} expenses`} />
-        <Tile label={t("pending")} value={s?.pending_total} sub={`${s?.pending_count ?? 0} awaiting review`} />
+        <Tile hero label={t("balance")} value={balances.data ? sumOf(balances.data, "available_balance") : undefined} sub="All wallets, today" />
+        <Tile direction="in" label={`${t("moneyIn")} · ${t("totalTopups")}`} value={s?.topups_total} sub={projectId ? "Not split by project" : `${s?.topups_count ?? 0} transfers`} />
+        <Tile direction="out" label={`${t("moneyOut")} · ${t("totalDisbursed")}`} value={s?.disbursed_total} sub="Approved + pending" />
+        <Tile direction="out" label={t("approved")} value={s?.approved_total} sub={`${s?.approved_count ?? 0} expenses`} />
+        <Tile direction="out" label={t("pending")} value={s?.pending_total} sub={`${s?.pending_count ?? 0} awaiting review`} />
         <Tile label={t("vat")} value={s?.approved_vat} sub="On approved expenses" />
       </div>
 
@@ -190,9 +191,9 @@ function Dashboard() {
                   {b.name} <span className="muted small">{b.kind === "card" ? `•••• ${b.card_last4}` : t("cash")}</span>
                 </td>
                 <td>{b.custodian_name}</td>
-                <td className="num"><Money value={b.topups_total} /></td>
-                <td className="num"><Money value={b.approved_total} /></td>
-                <td className="num"><Money value={b.pending_total} /></td>
+                <td className="num"><Money value={b.topups_total} direction="in" /></td>
+                <td className="num"><Money value={b.approved_total} direction="out" /></td>
+                <td className="num"><Money value={b.pending_total} direction="out" /></td>
                 <td className="num"><strong><Money value={b.available_balance} /></strong></td>
               </tr>
             ))}
@@ -204,9 +205,9 @@ function Dashboard() {
             <tfoot>
               <tr>
                 <th colSpan={2}>Total</th>
-                <th className="num"><Money value={sumOf(balances.data, "topups_total")} /></th>
-                <th className="num"><Money value={sumOf(balances.data, "approved_total")} /></th>
-                <th className="num"><Money value={sumOf(balances.data, "pending_total")} /></th>
+                <th className="num"><Money value={sumOf(balances.data, "topups_total")} direction="in" /></th>
+                <th className="num"><Money value={sumOf(balances.data, "approved_total")} direction="out" /></th>
+                <th className="num"><Money value={sumOf(balances.data, "pending_total")} direction="out" /></th>
                 <th className="num"><Money value={sumOf(balances.data, "available_balance")} /></th>
               </tr>
             </tfoot>
@@ -242,8 +243,8 @@ function Dashboard() {
               return (
                 <tr key={r.key}>
                   <td>{r.label}</td>
-                  <td className="num"><Money value={r.approved} /></td>
-                  <td className="num"><Money value={r.pending} /></td>
+                  <td className="num"><Money value={r.approved} direction="out" /></td>
+                  <td className="num"><Money value={r.pending} direction="out" /></td>
                   <td className="num">{r.expense_count}</td>
                   <td>
                     <div className="bar" style={{ width: `${(total / maxSpend) * 100}%` }} />
@@ -266,11 +267,11 @@ function sumOf(rows: WalletBalance[] | undefined, key: keyof WalletBalance): str
   return (h / 100).toFixed(2);
 }
 
-function Tile({ label, value, sub }: { label: string; value: number | string | undefined; sub?: string }) {
+function Tile({ label, value, sub, direction, hero }: { label: string; value: number | string | undefined; sub?: string; direction?: "in" | "out"; hero?: boolean }) {
   return (
-    <div className="tile">
+    <div className={`tile${direction ? ` ${direction}` : ""}${hero ? " hero" : ""}`}>
       <div className="label">{label}</div>
-      <div className="value">{value === undefined ? "…" : <Money value={value} />}</div>
+      <div className="value">{value === undefined ? "…" : <Money value={value} direction={direction} />}</div>
       {sub && <div className="sub">{sub}</div>}
     </div>
   );

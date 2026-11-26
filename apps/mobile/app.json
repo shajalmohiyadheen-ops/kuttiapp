@@ -43,6 +43,13 @@
           "photosPermission": "KuttiApp lets you attach an invoice photo from your gallery.",
           "cameraPermission": "KuttiApp uses the camera to photograph invoices."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "KuttiApp uses the microphone so you can say the project and amount instead of typing.",
+          "speechRecognitionPermission": "KuttiApp turns what you say into the project name and amount."
+        }
       ]
     ]
   }

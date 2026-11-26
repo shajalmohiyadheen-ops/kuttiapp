@@ -1,93 +1,147 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle, useColorScheme } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { formatSar } from "@kuttiapp/shared";
 import { useApp } from "@/lib/app";
-
-export const palette = {
-  light: { bg: "#f6f7f9", card: "#ffffff", text: "#1b1f24", muted: "#5d6673", border: "#dfe3e8", brand: "#0f6e56", brandInk: "#ffffff", danger: "#b42318", warn: "#9a6700", ok: "#1a7f37" },
-  dark: { bg: "#111418", card: "#1a1e23", text: "#e6e9ed", muted: "#9aa4b1", border: "#2d333b", brand: "#2fb38c", brandInk: "#0b1a14", danger: "#f97066", warn: "#e3b341", ok: "#56d364" },
-};
+import { useTheme } from "@/lib/theme";
 
 export function useColors() {
-  return palette[useColorScheme() === "dark" ? "dark" : "light"];
+  return useTheme().colors;
 }
 
-export function T({ children, muted, size = 15, bold, color, style }: { children: React.ReactNode; muted?: boolean; size?: number; bold?: boolean; color?: string; style?: object }) {
+/** Full-screen blue-to-violet background. */
+export function Background({ children }: { children: React.ReactNode }) {
+  const c = useColors();
+  return (
+    <LinearGradient colors={[c.bgTop, c.bgBottom]} style={{ flex: 1 }}>
+      {children}
+    </LinearGradient>
+  );
+}
+
+/** The KuttiApp logo. Replace apps/mobile/assets/logo.png with the real one (about 4:1). */
+export function Logo({ height = 36 }: { height?: number }) {
+  return <Image source={require("../../assets/logo.png")} style={{ height, width: height * 4 }} resizeMode="contain" accessibilityLabel="KuttiApp" />;
+}
+
+export function T({ children, muted, size = 16, bold, color, style, center }: { children: React.ReactNode; muted?: boolean; size?: number; bold?: boolean; color?: string; style?: object; center?: boolean }) {
   const c = useColors();
   const { rtl } = useApp();
   return (
-    <Text style={[{ color: color ?? (muted ? c.muted : c.text), fontSize: size, fontWeight: bold ? "700" : "400", writingDirection: rtl ? "rtl" : "ltr", textAlign: "left" }, style]}>
+    <Text
+      style={[
+        { color: color ?? (muted ? c.muted : c.text), fontSize: size, fontWeight: bold ? "700" : "400", writingDirection: rtl ? "rtl" : "ltr", textAlign: center ? "center" : "left" },
+        style,
+      ]}
+    >
       {children}
     </Text>
   );
 }
 
-export function Money({ value, size = 15, bold }: { value: number | string | null | undefined; size?: number; bold?: boolean }) {
+/** Amount in SAR. direction "out" shows red with a minus, "in" shows green with a plus. */
+export function Money({ value, size = 16, bold, direction }: { value: number | string | null | undefined; size?: number; bold?: boolean; direction?: "in" | "out" }) {
   const { locale } = useApp();
   const c = useColors();
   const neg = Number(value ?? 0) < 0;
+  const color = direction === "in" ? c.moneyIn : direction === "out" ? c.moneyOut : neg ? c.moneyOut : undefined;
+  const sign = direction === "in" ? "+" : direction === "out" ? "−" : "";
   return (
-    <T size={size} bold={bold} color={neg ? c.danger : undefined} style={{ fontVariant: ["tabular-nums"] }}>
+    <T size={size} bold={bold} color={color} style={{ fontVariant: ["tabular-nums"] }}>
+      {sign}
       {formatSar(value, { locale })}
     </T>
   );
 }
 
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+export function Card({ children, style, onPress }: { children: React.ReactNode; style?: ViewStyle; onPress?: () => void }) {
   const c = useColors();
-  return <View style={[{ backgroundColor: c.card, borderColor: c.border, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 14 }, style]}>{children}</View>;
-}
-
-export function Button({ title, onPress, kind = "default", disabled, busy, style }: { title: string; onPress: () => void; kind?: "primary" | "default" | "danger"; disabled?: boolean; busy?: boolean; style?: ViewStyle }) {
-  const c = useColors();
-  const bg = kind === "primary" ? c.brand : c.card;
-  const fg = kind === "primary" ? c.brandInk : kind === "danger" ? c.danger : c.text;
+  const base: ViewStyle = { backgroundColor: c.card, borderColor: c.border, borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 16 };
+  if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      disabled={disabled || busy}
-      style={({ pressed }) => [
-        { backgroundColor: bg, borderColor: kind === "primary" ? c.brand : c.border, borderWidth: 1, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: "center", opacity: disabled ? 0.5 : pressed ? 0.8 : 1 },
-        style,
-      ]}
-    >
-      {busy ? <ActivityIndicator color={fg} /> : <Text style={{ color: fg, fontWeight: "600", fontSize: 15 }}>{title}</Text>}
+    <Pressable onPress={onPress} style={({ pressed }) => [base, style, pressed && { opacity: 0.85 }]}>
+      {children}
     </Pressable>
   );
 }
 
-export function Field({ label, error, ...props }: TextInputProps & { label: string; error?: string | null }) {
+export function Button({
+  title,
+  onPress,
+  kind = "default",
+  disabled,
+  busy,
+  style,
+  big,
+  icon,
+}: {
+  title: string;
+  onPress: () => void;
+  kind?: "primary" | "default" | "danger" | "ghost";
+  disabled?: boolean;
+  busy?: boolean;
+  style?: ViewStyle;
+  big?: boolean;
+  icon?: string;
+}) {
+  const c = useColors();
+  const fg = kind === "primary" ? c.brandInk : kind === "danger" ? c.danger : kind === "ghost" ? c.muted : c.text;
+  const inner = busy ? (
+    <ActivityIndicator color={fg} />
+  ) : (
+    <Text style={{ color: fg, fontWeight: "700", fontSize: big ? 20 : 16, textAlign: "center" }}>
+      {icon ? `${icon}  ` : ""}
+      {title}
+    </Text>
+  );
+  const shape: ViewStyle = { borderRadius: big ? 20 : 14, paddingVertical: big ? 22 : 14, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", minHeight: 52 };
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled || busy} style={({ pressed }) => [{ opacity: disabled ? 0.45 : pressed ? 0.85 : 1 }, style]}>
+      {kind === "primary" ? (
+        <LinearGradient colors={[c.brand2, c.brand]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={shape}>
+          {inner}
+        </LinearGradient>
+      ) : (
+        <View style={[shape, kind !== "ghost" && { backgroundColor: c.card, borderWidth: 1, borderColor: kind === "danger" ? c.danger : c.border }]}>{inner}</View>
+      )}
+    </Pressable>
+  );
+}
+
+export function Field({ label, error, big, ...props }: TextInputProps & { label: string; error?: string | null; big?: boolean }) {
   const c = useColors();
   const { rtl } = useApp();
   return (
-    <View style={{ gap: 4 }}>
-      <T muted size={13}>{label}</T>
+    <View style={{ gap: 6 }}>
+      <T muted size={14}>{label}</T>
       <TextInput
         placeholderTextColor={c.muted}
         {...props}
-        style={[{ borderColor: error ? c.danger : c.border, borderWidth: 1, borderRadius: 8, padding: 10, color: c.text, backgroundColor: c.card, fontSize: 16, textAlign: rtl ? "right" : "left" }, props.style]}
+        style={[
+          { borderColor: error ? c.danger : c.border, borderWidth: 1, borderRadius: 12, padding: 14, color: c.text, backgroundColor: c.card, fontSize: big ? 28 : 17, textAlign: rtl ? "right" : "left" },
+          props.style,
+        ]}
       />
-      {error ? <T size={12} color={c.danger}>{error}</T> : null}
+      {error ? <T size={13} color={c.danger}>{error}</T> : null}
     </View>
   );
 }
 
-/** Horizontal chip picker: works the same on iOS and Android with no native picker dependency. */
-export function Chips<V extends string>({ label, value, options, onChange }: { label: string; value: V | ""; options: Array<{ value: V; label: string }>; onChange: (v: V) => void }) {
+/** Big tappable choices that wrap. Same on iOS and Android. */
+export function Chips<V extends string>({ label, value, options, onChange }: { label?: string; value: V | ""; options: Array<{ value: V; label: string }>; onChange: (v: V) => void }) {
   const c = useColors();
   return (
-    <View style={{ gap: 6 }}>
-      <T muted size={13}>{label}</T>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+    <View style={{ gap: 8 }}>
+      {label ? <T muted size={14}>{label}</T> : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {options.map((o) => {
           const on = o.value === value;
           return (
             <Pressable
               key={o.value}
               onPress={() => onChange(o.value)}
-              style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 99, borderWidth: 1, borderColor: on ? c.brand : c.border, backgroundColor: on ? c.brand : c.card }}
+              style={{ paddingVertical: 12, paddingHorizontal: 16, borderRadius: 99, borderWidth: 1.5, borderColor: on ? c.brand : c.border, backgroundColor: on ? c.brand : c.card }}
             >
-              <Text style={{ color: on ? c.brandInk : c.text, fontSize: 14 }}>{o.label}</Text>
+              <Text style={{ color: on ? c.brandInk : c.text, fontSize: 16, fontWeight: on ? "700" : "400" }}>{o.label}</Text>
             </Pressable>
           );
         })}
@@ -101,8 +155,32 @@ export function StatusPill({ status }: { status: string }) {
   const { t } = useApp();
   const color = status === "approved" ? c.ok : status === "rejected" || status === "reversed" ? c.danger : status === "draft" ? c.muted : c.warn;
   return (
-    <View style={{ borderColor: color, borderWidth: 1, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 }}>
-      <Text style={{ color, fontSize: 12 }}>{status === "draft" ? t("drafts") : t(status as "pending")}</Text>
+    <View style={{ borderColor: color, borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3 }}>
+      <Text style={{ color, fontSize: 13 }}>{status === "draft" ? t("drafts") : t(status as "pending")}</Text>
+    </View>
+  );
+}
+
+/** Hold-to-talk microphone button. */
+export function MicButton({ listening, onPressIn, onPressOut, label }: { listening: boolean; onPressIn: () => void; onPressOut: () => void; label: string }) {
+  const c = useColors();
+  return (
+    <View style={{ alignItems: "center", gap: 12 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        style={({ pressed }) => ({ transform: [{ scale: pressed || listening ? 1.08 : 1 }] })}
+      >
+        <LinearGradient
+          colors={listening ? [c.moneyOut, c.brand] : [c.brand2, c.brand]}
+          style={{ width: 132, height: 132, borderRadius: 66, alignItems: "center", justifyContent: "center", borderWidth: listening ? 6 : 0, borderColor: c.cardAlt }}
+        >
+          <Text style={{ fontSize: 54 }}>🎤</Text>
+        </LinearGradient>
+      </Pressable>
+      <T muted center>{label}</T>
     </View>
   );
 }

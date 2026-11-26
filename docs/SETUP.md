@@ -46,7 +46,7 @@ cp apps/mobile/.env.example apps/mobile/.env   # URL + anon key only, never the 
 npm run dev:mobile
 ```
 
-Scan the QR code with **Expo Go** to try it on a phone.
+Scan the QR code with **Expo Go** to try it on a phone. In Expo Go the microphone (voice input) isn't available, so the app falls back to typing. Voice needs a real build (below), or a development build: `npx eas-cli@latest build -p android --profile development`.
 
 ### Installable builds
 
@@ -61,6 +61,15 @@ npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value YOUR-
 - **Android APK** (install directly, no Play Store): `npx eas-cli@latest build -p android --profile preview`. EAS gives you a download link; send it to custodians.
 - **iPhone via TestFlight**: `npx eas-cli@latest build -p ios --profile production`, then `npx eas-cli@latest submit -p ios`. Testers install it from TestFlight. This needs the Apple Developer account.
 - Change `ios.bundleIdentifier` and `android.package` in `apps/mobile/app.json` (currently `com.kuttiapp.pettycash`) to your company's domain **before** the first store build. They can't be changed after publishing.
+
+## Your logo
+
+Replace these two files with your logo, keeping roughly a 4:1 wide shape on a transparent background:
+
+- `apps/web/public/logo.svg` (web: sidebar, login page, browser tab). An SVG is best; a PNG works too, but then update the `src="/logo.svg"` references in `apps/web/src/components/shell.tsx`.
+- `apps/mobile/assets/logo.png` (mobile: home and login screens), about 1200 × 300 px.
+
+For the phone's app icon, replace `apps/mobile/assets/icon.png` (1024 × 1024) and the `android-icon-*.png` files.
 
 ## 4. First-day checklist
 

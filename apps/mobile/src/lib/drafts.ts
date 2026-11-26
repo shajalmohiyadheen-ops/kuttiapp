@@ -145,3 +145,41 @@ export function isNetworkError(e: unknown): boolean {
   const m = e instanceof Error ? e.message : String(e);
   return /network|fetch|timed? ?out|offline|failed to connect/i.test(m);
 }
+
+/**
+ * Saves the expense on the phone, then tries to send it straight away.
+ * "sent": recorded on the server. "queued": kept as a draft (offline), sent later.
+ * Throws for errors the person must fix (e.g. missing invoice); the draft is kept.
+ */
+export async function saveAndSend(form: Omit<Draft, "client_id" | "saved_at">, userId: string, online: boolean, clientId?: string): Promise<{ result: "sent" | "queued"; draft: Draft }> {
+  const draft = await saveDraft({ ...form, client_id: clientId });
+  if (!online) return { result: "queued", draft };
+  try {
+    await sendDraft(draft, userId);
+    await removeDraft(draft.client_id);
+    return { result: "sent", draft };
+  } catch (e) {
+    if (isNetworkError(e)) return { result: "queued", draft };
+    await saveDraft({ ...draft, last_error: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
+}
+
+const RECENT_KEY = "kutti.recent.v1";
+export interface RecentChoices {
+  projects: string[];
+  category: string | null;
+  wallet: string | null;
+}
+export async function getRecent(): Promise<RecentChoices> {
+  try {
+    const raw = await AsyncStorage.getItem(RECENT_KEY);
+    if (raw) return JSON.parse(raw) as RecentChoices;
+  } catch {}
+  return { projects: [], category: null, wallet: null };
+}
+export async function rememberChoices(projectId: string, categoryId: string, walletId: string) {
+  const r = await getRecent();
+  const projects = [projectId, ...r.projects.filter((p) => p !== projectId)].slice(0, 4);
+  await AsyncStorage.setItem(RECENT_KEY, JSON.stringify({ projects, category: categoryId, wallet: walletId })).catch(() => {});
+}

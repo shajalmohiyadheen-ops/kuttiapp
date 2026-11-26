@@ -81,7 +81,7 @@ function Topups() {
       </div>
       <ErrorText error={list.error} />
       <p className="muted small">
-        {t("posted")}: <Money value={toDecimalString(sum(rows.filter((r) => r.status === "posted").map((r) => r.amount)))} />
+        {t("posted")}: <Money direction="in" value={toDecimalString(sum(rows.filter((r) => r.status === "posted").map((r) => r.amount)))} />
       </p>
       <div className="table-wrap">
         <table>
@@ -104,7 +104,7 @@ function Topups() {
                 <td>{name("wallets", r.wallet_id)}</td>
                 <td>{t(r.method === "cash" ? "cash" : r.method)}</td>
                 <td>{r.reference}</td>
-                <td className="num"><Money value={r.amount} /></td>
+                <td className="num"><Money value={r.amount} direction="in" /></td>
                 <td><StatusBadge status={r.status} /></td>
               </tr>
             ))}
@@ -210,7 +210,7 @@ function TopupDetail({ topup, onClose, onChanged }: { topup: Topup; onClose: () 
         <dt>{t("wallet")}</dt>
         <dd>{name("wallets", topup.wallet_id)}</dd>
         <dt>{t("amount")}</dt>
-        <dd><Money value={topup.amount} /></dd>
+        <dd><Money value={topup.amount} direction="in" /></dd>
         <dt>{t("date")}</dt>
         <dd>{topup.transfer_date}</dd>
         <dt>{t("reference")}</dt>
