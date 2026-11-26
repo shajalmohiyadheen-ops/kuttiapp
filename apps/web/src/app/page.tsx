@@ -248,6 +248,8 @@ function weeks(month: string, rows: Array<{ expense_date: string; amount: string
     const end = Math.min(last, start + 6);
     out.push({ label: `${start}–${end}`, sub: `${start}–${end} ${mon}`, cents: 0 });
   }
+  const now = new Date().toISOString().slice(0, 10);
+  if (now.slice(0, 7) === month.slice(0, 7)) out[Math.min(out.length - 1, Math.floor((Number(now.slice(8, 10)) - 1) / 7))].current = true;
   for (const r of rows) {
     // an expense dated in another month but booked to this one goes to the nearest end
     const ym = r.expense_date.slice(0, 7), d = Number(r.expense_date.slice(8, 10));
@@ -259,5 +261,5 @@ function weeks(month: string, rows: Array<{ expense_date: string; amount: string
 function months(rows: Array<{ period_month: string; amount: string | number }>): Bar[] {
   const map = new Map<string, number>();
   for (const r of rows) map.set(r.period_month, (map.get(r.period_month) ?? 0) + fromDb(r.amount));
-  return [...map].sort(([a], [b]) => a.localeCompare(b)).map(([k, cents]) => ({ label: monthLabel(k).slice(0, 3), sub: monthLabel(k), cents }));
+  return [...map].sort(([a], [b]) => a.localeCompare(b)).map(([k, cents]) => ({ label: monthLabel(k).slice(0, 3), sub: monthLabel(k), cents, current: k.slice(0, 7) === new Date().toISOString().slice(0, 7) }));
 }

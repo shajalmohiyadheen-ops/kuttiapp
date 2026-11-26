@@ -521,3 +521,10 @@ th { font-family: var(--font); }
 .donut-value { font-family: var(--font); }
 @media (prefers-reduced-motion: reduce) { .donut-g, .bars .bar { animation: none; } .donut .slice, .bars .bar { transition: none; } }
 .tally { font-size: 15px; }
+
+/* ── Chart colours: vivid, colour-blind-checked order (blue, teal, amber, pink, violet, orange); no money green/red ── */
+:root { --series-1: #3b82f6; --series-2: #10b3a0; --series-3: #cf9000; --series-4: #ec4899; --series-5: #8b5cf6; --series-6: #f26b2a; }
+:root[data-theme="light"] { --series-1: #2563eb; --series-2: #0fb5a0; --series-3: #f5a300; --series-4: #ee5ea0; --series-5: #7c3aed; --series-6: #f47230; }
+.bars .bar.dim { opacity: .5; }
+.bars .bar.current { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--grad-b) 60%, transparent)); }
+.bars .tick.current { fill: var(--text); font-weight: 600; }

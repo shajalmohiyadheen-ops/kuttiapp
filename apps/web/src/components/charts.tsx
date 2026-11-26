@@ -34,7 +34,7 @@ export function Donut({ data, title }: { data: Slice[]; title: string }) {
             <defs>
               {slices.map((d, i) => (
                 <linearGradient key={d.label} id={`${uid}-s${i}`} x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" style={{ stopColor: `color-mix(in srgb, ${colorOf(i)} 62%, white)` }} />
+                  <stop offset="0" style={{ stopColor: `color-mix(in srgb, ${colorOf(i)} 78%, white)` }} />
                   <stop offset="1" style={{ stopColor: colorOf(i) }} />
                 </linearGradient>
               ))}
@@ -72,12 +72,13 @@ export function Donut({ data, title }: { data: Slice[]; title: string }) {
   );
 }
 
-export interface Bar { label: string; sub?: string; cents: number }
+export interface Bar { label: string; sub?: string; cents: number; current?: boolean }
 
 /** Vertical bars, one series, rounded tops anchored to the baseline, hover tooltip per bar. */
 export function Bars({ data, title, legend }: { data: Bar[]; title: string; legend: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...data.map((d) => d.cents));
+  const anyCurrent = data.some((d) => d.current);
   const step = niceStep(max / 100 / 4);
   const top = Math.max(step, Math.ceil(max / 100 / step) * step);
   const ticks = [0, 1, 2, 3, 4].map((i) => (top / 4) * i).filter((v, i, a) => a.indexOf(v) === i);
@@ -112,10 +113,10 @@ export function Bars({ data, title, legend }: { data: Bar[]; title: string; lege
                 <rect x={x(i) - ((Wd - L) / data.length) / 2} y={T} width={(Wd - L) / data.length} height={H - T - B} fill="transparent" />
                 {h > 0 && (
                   <path d={`M${x0},${y(0)} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${y(0)} Z`}
-                    className={hover === i ? "bar on" : "bar"} style={{ animationDelay: `${i * 70}ms` }}
-                    fill={`url(#${uid}-bar)`} opacity={hover === null || hover === i ? 1 : 0.45} />
+                    className={["bar", hover === i && "on", d.current && "current", anyCurrent && !d.current && hover !== i && "dim"].filter(Boolean).join(" ")} style={{ animationDelay: `${i * 70}ms` }}
+                    fill={`url(#${uid}-bar)`} opacity={hover === null || hover === i ? undefined : 0.45} />
                 )}
-                <text x={x(i)} y={H - 8} textAnchor="middle" className="tick">{d.label}</text>
+                <text x={x(i)} y={H - 8} textAnchor="middle" className={d.current ? "tick current" : "tick"}>{d.label}</text>
               </g>
             );
           })}
