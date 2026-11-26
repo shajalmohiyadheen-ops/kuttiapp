@@ -299,3 +299,57 @@ a.btn { font: inherit; border-radius: 10px; padding: 9px 16px; border: 1px solid
   .main h1 { font-size: 22px; }
 }
 @media (max-width: 420px) { .tile .value { font-size: 17px; } .tile .label { font-size: 13px; } }
+
+/* ── Soft rounded edges: large card corners, pill buttons and tabs, rounded filled inputs, soft shadows instead of hard lines ── */
+:root {
+  --radius: 22px;
+  --radius-sm: 14px;
+  --edge: rgb(0 200 255 / 13%);
+  --field: rgb(255 255 255 / 4%);
+  --field-edge: rgb(0 200 255 / 18%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 5 20 / 40%);
+  --neon: 0 0 0 1px rgb(0 200 255 / 10%), 0 0 22px rgb(0 190 255 / 7%);
+}
+:root[data-theme="light"] {
+  --edge: rgb(15 60 130 / 7%);
+  --field: #f2f6fb;
+  --field-edge: #e2eaf4;
+  --shadow: 0 1px 2px rgb(15 45 100 / 5%), 0 10px 30px rgb(15 45 100 / 7%);
+  --neon: 0 0 0 1px rgb(15 60 130 / 4%);
+}
+.panel, .tile, .table-wrap, .phone .card, .phone .item, .bell-menu, .modal { border-color: var(--edge); }
+.panel, .tile { padding: 22px; }
+.panel, .tile, .table-wrap, .bell-menu { border-radius: var(--radius); }
+.modal { border-radius: 26px; padding: 24px; }
+.tiles { gap: 16px; }
+.tile.in, .tile.out { border-top: 1px solid var(--edge); }
+.tile.in .label::before, .tile.out .label::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; background: var(--money-in); box-shadow: 0 0 0 4px color-mix(in srgb, var(--money-in) 18%, transparent); }
+.tile.out .label::before { background: var(--money-out); box-shadow: 0 0 0 4px color-mix(in srgb, var(--money-out) 18%, transparent); }
+.tile.hero { border-color: transparent; }
+th, td { border-bottom-color: var(--edge); padding: 12px 14px; }
+th { background: color-mix(in srgb, var(--brand) 6%, transparent); }
+input, select, textarea { border-radius: var(--radius-sm); padding: 10px 14px; background: var(--field); border-color: var(--field-edge); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+select { padding-inline-end: 34px; }
+button, a.btn { border-radius: 999px; padding: 10px 20px; border-color: var(--edge); box-shadow: 0 1px 2px rgb(0 0 0 / 6%); }
+button.primary { box-shadow: 0 6px 18px var(--glow); }
+.nav { border-inline-end-color: var(--edge); }
+.nav a { border-radius: 999px; padding: 10px 16px; }
+.tally { border-radius: 16px; border-style: solid; border-color: var(--edge); padding: 14px 18px; }
+.notice, .flag-list li, .message, .qr-card img { border-radius: var(--radius-sm); }
+.invoice-img { border-radius: var(--radius-sm); border-color: var(--edge); }
+.bell-btn { border-color: var(--edge); }
+.bell-item { border-radius: 14px; }
+/* phone */
+.phone .card { border-radius: 26px; }
+.phone .bigbtn, .phone .btn { border-radius: 999px; }
+.phone .choice, .phone .item { border-radius: 20px; border-color: var(--edge); }
+.phone input, .phone textarea, .phone select { border-radius: 18px; }
+.phone textarea { border-radius: 20px; }
+.phone .pockets > div { border-radius: 18px; }
+.phone .banner { border-radius: 18px; }
+.phone .photo { border-radius: 20px; }
+@media (max-width: 800px) { .nav { border-bottom-color: var(--edge); } }
+.theme-toggle { margin: 8px; padding: 4px; border-radius: 999px; background: var(--field); border: 1px solid var(--edge); }
+.theme-toggle button { border: 0; box-shadow: none; background: transparent; }
+.theme-toggle button.on { box-shadow: 0 4px 12px var(--glow); }
